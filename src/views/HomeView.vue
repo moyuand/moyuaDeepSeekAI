@@ -2,6 +2,21 @@
   <n-message-provider>
     <!-- 整个页面使用 flex-column 布局 -->
     <div class="chat-container">
+      <n-page-header title="和 AI 的聊天小助手" class="p-4">
+        <template #avatar>
+          <n-avatar class="text-blue-500 bg-blue-100" round>Moyu</n-avatar>
+        </template>
+        <template #extra>
+          <n-space>
+            <n-select
+              v-model:value="selectedModel"
+              :options="options"
+              placeholder="请选择模型"
+              @update-value="handleUpdateModel"
+            />
+          </n-space>
+        </template>
+      </n-page-header>
       <!-- 聊天记录区域 -->
       <div class="messages">
         <div
@@ -32,33 +47,15 @@
 
       <!-- 输入区域固定在底部 -->
       <div class="input-area">
-        <n-select
-          v-model:value="selectedModel"
-          :options="options"
-          class="pb-2"
-          placeholder="请选择模型"
-          @update-value="handleUpdateModel"
-        />
         <n-input
           v-model:value="content"
           type="textarea"
           placeholder="请输入对话内容"
+          @keydown.enter="sendMessage"
         />
         <div class="btn-group">
-          <!-- <n-dropdown :options="uploadType" trigger="click" @select="selectType">
-          <n-button circle>
-            <n-icon size="24">
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
-                <path
-                  d="M368.5 240H272v-96.5c0-8.8-7.2-16-16-16s-16 7.2-16 16V240h-96.5c-8.8 0-16 7.2-16 16 0 4.4 1.8 8.4 4.7 11.3 2.9 2.9 6.9 4.7 11.3 4.7H240v96.5c0 4.4 1.8 8.4 4.7 11.3 2.9 2.9 6.9 4.7 11.3 4.7 8.8 0 16-7.2 16-16V272h96.5c8.8 0 16-7.2 16-16s-7.2-16-16-16z"
-                />
-              </svg>
-            </n-icon>
-          </n-button>
-        </n-dropdown> -->
-
           <n-upload
-            action="https://www.mocky.io/v2/5e4bafc63100007100d8b70f"
+            :custom-request="customRequest"
             :headers="{
               'naive-info': 'hello!',
             }"
@@ -153,7 +150,7 @@ const beforeUpload = async (data) => {
 
 const handleUpdateModel = async (value) => {
   console.log("选择了模型：", value);
-  const res = await fetch("http://192.168.168.40:3000/updateModel", {
+  const res = await fetch("http://192.168.168.13:3000/updateModel", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ model: value }),
@@ -163,6 +160,13 @@ const handleUpdateModel = async (value) => {
   currentTaskId.value = null;
   const result = await res.json();
   console.log("更新模型结果：", result);
+};
+
+// 上传文件
+const customRequest = async (data) => {
+  const formData = new FormData();
+  formData.append("file", data.file.file);
+  const res = await fetch("http://");
 };
 
 /**
@@ -183,7 +187,7 @@ const sendMessage = async () => {
   // 判断是首次还是后续
   if (!currentTaskId.value) {
     // 第一次：POST /start
-    const response = await fetch("http://192.168.168.40:3000/start", {
+    const response = await fetch("http://192.168.168.13:3000/start", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ content: content.value }),
@@ -194,7 +198,7 @@ const sendMessage = async () => {
   } else {
     // 后续：POST /continue
     taskId = currentTaskId.value;
-    await fetch("http://192.168.168.40:3000/continue", {
+    await fetch("http://192.168.168.13:3000/continue", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ taskId, content: content.value }),
@@ -213,7 +217,7 @@ const sendMessage = async () => {
  */
 const doSSE = (taskId) => {
   const evtSource = new EventSource(
-    `http://192.168.168.40:3000/events?taskId=${taskId}`
+    `http://192.168.168.13:3000/events?taskId=${taskId}`
   );
 
   // 在对话历史中新建一条空的 AI 消息，准备拼接思考过程和结果
@@ -251,7 +255,7 @@ const clearConversation = async () => {
   content.value = "";
   conversationHistory.value = [];
   currentTaskId.value = null;
-  const res = await fetch("http://192.168.168.40:3000/clear", {
+  const res = await fetch("http://192.168.168.13:3000/clear", {
     method: "get",
   });
   const result = await res.json();
