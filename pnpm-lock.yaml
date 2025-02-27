@@ -33,6 +33,9 @@ importers:
       '@eslint/js':
         specifier: ^9.20.0
         version: 9.20.0
+      '@vicons/fluent':
+        specifier: ^0.13.0
+        version: 0.13.0
       '@vitejs/plugin-vue':
         specifier: ^5.2.1
         version: 5.2.1(vite@6.1.1(jiti@1.21.7)(yaml@2.7.0))(vue@3.5.13)
@@ -603,6 +606,9 @@ packages:
 
   '@types/lodash@4.17.15':
     resolution: {integrity: sha512-w/P33JFeySuhN6JLkysYUK2gEmy9kHHFN7E8ro0tkfmlDOgxBDzWEZ/J8cWA+fHqFevpswDTFZnDx+R9lbL6xw==}
+
+  '@vicons/fluent@0.13.0':
+    resolution: {integrity: sha512-bYGZsOE3qzvm3Cm43e7tybgGlr5ZUpYqtRZq0g0Tfupe8jIzLolpvQLNUt1zS8Mgt6goTbUk5YH7Fkv16jkykg==}
 
   '@vitejs/plugin-vue-jsx@4.1.1':
     resolution: {integrity: sha512-uMJqv/7u1zz/9NbWAD3XdjaY20tKTf17XVfQ9zq4wY1BjsB/PjpJPMe2xiG39QpP4ZdhYNhm4Hvo66uJrykNLA==}
@@ -2256,6 +2262,8 @@ snapshots:
       '@types/lodash': 4.17.15
 
   '@types/lodash@4.17.15': {}
+
+  '@vicons/fluent@0.13.0': {}
 
   '@vitejs/plugin-vue-jsx@4.1.1(vite@6.1.1(jiti@1.21.7)(yaml@2.7.0))(vue@3.5.13)':
     dependencies:
