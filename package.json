@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "autoprefixer": "^10.4.20",
+    "highlight.js": "^11.11.1",
     "marked": "^15.0.7",
     "pinia": "^3.0.1",
     "postcss": "^8.5.3",

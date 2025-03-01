@@ -8,6 +8,9 @@ import router from './router'
 
 import naive from 'naive-ui'
 
+// 导入highlight.js的样式，用于代码高亮
+import 'highlight.js/styles/github.css'
+
 import './index.css'
 
 const app = createApp(App)

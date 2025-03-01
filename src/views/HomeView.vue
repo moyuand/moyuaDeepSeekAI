@@ -67,12 +67,18 @@
             <n-button>上传文件</n-button>
           </n-upload>
 
-          <n-button type="info" @click="sendMessage" secondary>
+          <n-button type="info" @click="isGenerating ? stopGeneration() : sendMessage()" secondary>
             <n-icon size="22">
-              <Send24Filled />
+              <template v-if="isGenerating">
+                <Stop24Filled />
+              </template>
+              <template v-else>
+                <Send24Filled />
+              </template>
             </n-icon>
+            {{ isGenerating ? '停止' : '发送' }}
           </n-button>
-          <n-button @click="clearConversation">清空对话</n-button>
+          <n-button @click="clearConversation" type="info">清空对话</n-button>
         </div>
       </div>
     </div>
@@ -80,10 +86,36 @@
 </template>
 
 <script setup>
-import { ref } from "vue";
+import { ref, nextTick, onMounted } from "vue";
 import { marked } from "marked";
 import { useMessage } from "naive-ui";
-import { Send24Filled } from "@vicons/fluent";
+import { Send24Filled, Stop24Filled } from "@vicons/fluent";
+import hljs from 'highlight.js';
+import 'highlight.js/styles/github.css';
+
+// 配置marked使用highlight.js进行代码高亮
+marked.setOptions({
+  highlight: function(code, lang) {
+    if (lang && hljs.getLanguage(lang)) {
+      return hljs.highlight(code, { language: lang }).value;
+    }
+    return hljs.highlightAuto(code).value;
+  },
+  langPrefix: 'hljs language-',
+  gfm: true,
+  breaks: true,
+  pedantic: false,
+  smartLists: true,
+  smartypants: false,
+  renderer: new marked.Renderer(),
+  // 修改escape函数，只在非代码块的情况下转义HTML标签
+  escape: function(html) {
+    if (html.includes('<pre>') || html.includes('<code>')) {
+      return html;
+    }
+    return html.replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  }
+});
 
 // 1) 用户输入的文本
 const content = ref("");
@@ -98,6 +130,11 @@ const conversationHistory = ref([]);
 const currentTaskId = ref(null);
 const message = useMessage();
 
+// 4) 是否正在生成回复
+const isGenerating = ref(false);
+// 5) 当前的EventSource实例
+let currentEvtSource = null;
+
 const options = ref([
   {
     label: "DeepSeek R1",
@@ -109,31 +146,31 @@ const options = ref([
   },
 ]);
 
-const uploadType = ref([
-  {
-    label: "上传图片",
-    key: "image",
-  },
-  {
-    label: "上传文件",
-    key: "file",
-  },
-  {
-    label: "上传视频",
-    key: "video",
-  },
-  {
-    label: "上传音频",
-    key: "audio",
-  },
-]);
+// const uploadType = ref([
+//   {
+//     label: "上传图片",
+//     key: "image",
+//   },
+//   {
+//     label: "上传文件",
+//     key: "file",
+//   },
+//   {
+//     label: "上传视频",
+//     key: "video",
+//   },
+//   {
+//     label: "上传音频",
+//     key: "audio",
+//   },
+// ]);
 
 const selectedModel = ref("deepseek-r1");
 
 // 选择上传类型
-const selectType = (value) => {
-  console.log("选择了上传类型：", value);
-};
+// const selectType = (value) => {
+//   console.log("选择了上传类型：", value);
+// };
 
 const beforeUpload = async (data) => {
   if (
@@ -150,7 +187,7 @@ const beforeUpload = async (data) => {
 
 const handleUpdateModel = async (value) => {
   console.log("选择了模型：", value);
-  const res = await fetch("http://192.168.168.13:3000/updateModel", {
+  const res = await fetch("http://192.168.1.164:3000/updateModel", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ model: value }),
@@ -167,6 +204,37 @@ const customRequest = async (data) => {
   const formData = new FormData();
   formData.append("file", data.file.file);
   const res = await fetch("http://");
+  if (res.ok) {
+    const result = await res.json();
+    console.log("上传文件结果：", result);
+    if (result.code === 0) {
+      message.success("上传成功");
+      content.value = result.data.url;
+    } else {
+      message.error("上传失败");
+    }
+  } else {
+    message.error("上传失败");
+  }
+};
+
+/**
+ * 停止生成
+ */
+const stopGeneration = () => {
+  if (currentEvtSource) {
+    currentEvtSource.close();
+    currentEvtSource = null;
+    isGenerating.value = false;
+    
+    // 在当前消息中添加提示
+    const currentIndex = conversationHistory.value.length - 1;
+    if (currentIndex >= 0 && conversationHistory.value[currentIndex].role === 'assistant') {
+      conversationHistory.value[currentIndex].content += "\n\n*[用户已停止生成]*";
+    }
+    
+    message.info('已停止生成回复');
+  }
 };
 
 /**
@@ -175,6 +243,9 @@ const customRequest = async (data) => {
 const sendMessage = async () => {
   // 若输入为空，则不处理
   if (!content.value.trim()) return;
+  
+  // 如果正在生成，则不处理
+  if (isGenerating.value) return;
 
   let taskId;
 
@@ -183,11 +254,14 @@ const sendMessage = async () => {
     role: "user",
     content: content.value,
   });
+  
+  // 滚动到最新消息
+  scrollToBottom();
 
   // 判断是首次还是后续
   if (!currentTaskId.value) {
     // 第一次：POST /start
-    const response = await fetch("http://192.168.168.13:3000/start", {
+    const response = await fetch("http://192.168.1.164:3000/start", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ content: content.value }),
@@ -198,7 +272,7 @@ const sendMessage = async () => {
   } else {
     // 后续：POST /continue
     taskId = currentTaskId.value;
-    await fetch("http://192.168.168.13:3000/continue", {
+    await fetch("http://192.168.1.164:3000/continue", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ taskId, content: content.value }),
@@ -216,8 +290,12 @@ const sendMessage = async () => {
  * 建立 SSE，实时接收 AI 消息
  */
 const doSSE = (taskId) => {
-  const evtSource = new EventSource(
-    `http://192.168.168.13:3000/events?taskId=${taskId}`
+  // 设置生成状态为true
+  isGenerating.value = true;
+  
+  // 创建并保存EventSource实例
+  currentEvtSource = new EventSource(
+    `http://192.168.1.164:3000/events?taskId=${taskId}`
   );
 
   // 在对话历史中新建一条空的 AI 消息，准备拼接思考过程和结果
@@ -228,34 +306,87 @@ const doSSE = (taskId) => {
   });
   const currentIndex = conversationHistory.value.length - 1;
 
-  evtSource.onmessage = (e) => {
+  currentEvtSource.onmessage = (e) => {
     if (e.data === "[DONE]") {
-      evtSource.close();
+      currentEvtSource.close();
+      currentEvtSource = null;
+      isGenerating.value = false;
+      scrollToBottom();
     } else if (e.data.startsWith("[reasoning]")) {
       const chunk = e.data.replace("[reasoning]", "");
       conversationHistory.value[currentIndex].reasoning += chunk;
+      scrollToBottom();
     } else if (e.data.startsWith("[result]")) {
       const chunk = e.data.replace("[result]", "");
       conversationHistory.value[currentIndex].content += chunk;
+      scrollToBottom();
     } else {
       console.log("Other SSE data:", e.data);
     }
   };
 
-  evtSource.onerror = (err) => {
+  currentEvtSource.onerror = (err) => {
     console.error("EventSource 错误:", err);
-    evtSource.close();
+    currentEvtSource.close();
+    currentEvtSource = null;
+    isGenerating.value = false;
   };
 };
+
+// 添加用户滚动状态变量
+const isUserScrolling = ref(false);
+const lastScrollTop = ref(0);
+
+/**
+ * 滚动到最新消息
+ */
+const scrollToBottom = () => {
+  // 如果用户正在手动滚动，则不自动滚动
+  if (isUserScrolling.value) return;
+
+  nextTick(() => {
+    const messagesContainer = document.querySelector('.messages');
+    if (messagesContainer) {
+      messagesContainer.scrollTop = messagesContainer.scrollHeight;
+    }
+  });
+};
+
+// 监听滚动事件
+onMounted(() => {
+  const messagesContainer = document.querySelector('.messages');
+  if (messagesContainer) {
+    messagesContainer.addEventListener('scroll', () => {
+      // 检测是否是用户手动滚动
+      const currentScrollTop = messagesContainer.scrollTop;
+      const maxScrollTop = messagesContainer.scrollHeight - messagesContainer.clientHeight;
+      
+      // 更新用户滚动状态
+      isUserScrolling.value = true;
+      
+      // 如果滚动到底部，重新启用自动滚动
+      if (Math.abs(currentScrollTop - maxScrollTop) < 10) {
+        isUserScrolling.value = false;
+      }
+      
+      lastScrollTop.value = currentScrollTop;
+    });
+  }
+});
 
 /**
  * 清空对话
  */
 const clearConversation = async () => {
+  // 如果正在生成，先停止生成
+  if (isGenerating.value) {
+    stopGeneration();
+  }
+  
   content.value = "";
   conversationHistory.value = [];
   currentTaskId.value = null;
-  const res = await fetch("http://192.168.168.13:3000/clear", {
+  const res = await fetch("http://192.168.1.164:3000/clear", {
     method: "get",
   });
   const result = await res.json();
@@ -315,8 +446,8 @@ const clearConversation = async () => {
   border-radius: 12px;
   word-wrap: break-word;
   white-space: pre-wrap;
-  line-height: 1.4;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.08);
+  line-height: 1.6;
+  border: none; /* 确保没有边框 */
 }
 
 /* 用户气泡（右侧，绿色背景） */
@@ -327,8 +458,100 @@ const clearConversation = async () => {
 
 /* AI 气泡（左侧，灰色背景） */
 .assistant .message-bubble {
-  background-color: #ececec;
-  color: #333;
+  /* background-color: #ececec;
+  color: #333; */
+}
+
+/* 代码块样式，类似ChatGPT */
+:deep(pre) {
+  background-color: #f6f8fa;
+  border-radius: 6px;
+  padding: 12px 16px;
+  margin: 8px 0;
+  overflow-x: auto;
+  font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, Courier, monospace;
+  font-size: 16px;
+  line-height: 1.45;
+  border: 1px solid #e1e4e8;
+  position: relative;
+}
+
+/* 代码行样式 */
+:deep(code) {
+  font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, Courier, monospace;
+  font-size: 16px;
+  padding: 2px 4px;
+  border-radius: 3px;
+  background-color: rgba(27, 31, 35, 0.05);
+  color: #24292e;
+}
+
+/* 代码块内的代码不需要额外背景色 */
+:deep(pre code) {
+  background-color: transparent;
+  padding: 0;
+  border-radius: 0;
+  white-space: pre;
+  color: #24292e;
+}
+
+/* 语法高亮基础样式 */
+.message-bubble :deep(.hljs-keyword),
+.message-bubble :deep(.hljs-selector-tag),
+.message-bubble :deep(.hljs-subst) {
+  color: #d73a49;
+  font-weight: bold;
+}
+
+.message-bubble :deep(.hljs-string),
+.message-bubble :deep(.hljs-doctag) {
+  color: #032f62;
+}
+
+.message-bubble :deep(.hljs-title),
+.message-bubble :deep(.hljs-section),
+.message-bubble :deep(.hljs-selector-id) {
+  color: #6f42c1;
+  font-weight: bold;
+}
+
+.message-bubble :deep(.hljs-comment),
+.message-bubble :deep(.hljs-quote) {
+  color: #6a737d;
+  font-style: italic;
+}
+
+.message-bubble :deep(.hljs-variable),
+.message-bubble :deep(.hljs-template-variable),
+.message-bubble :deep(.hljs-attribute),
+.message-bubble :deep(.hljs-tag),
+.message-bubble :deep(.hljs-name),
+.message-bubble :deep(.hljs-regexp),
+.message-bubble :deep(.hljs-link) {
+  color: #005cc5;
+}
+
+.message-bubble :deep(.hljs-number),
+.message-bubble :deep(.hljs-meta),
+.message-bubble :deep(.hljs-built_in),
+.message-bubble :deep(.hljs-builtin-name),
+.message-bubble :deep(.hljs-literal),
+.message-bubble :deep(.hljs-type),
+.message-bubble :deep(.hljs-params) {
+  color: #e36209;
+}
+
+.message-bubble :deep(.hljs-symbol),
+.message-bubble :deep(.hljs-bullet) {
+  color: #24292e;
+}
+
+.message-bubble :deep(.hljs-deletion) {
+  background-color: #ffeef0;
+}
+
+.message-bubble :deep(.hljs-addition) {
+  background-color: #f0fff4;
 }
 
 /* 响应式：手机端可以根据需要微调 */
