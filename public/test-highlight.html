@@ -36,13 +36,22 @@
       background-color: transparent;
       padding: 0;
       border-radius: 0;
-      white-space: pre;
+      white-space: pre !important;
       color: #24292e;
+      display: block;
+      overflow-x: auto;
+      tab-size: 2;
     }
     .test-container {
       margin-bottom: 30px;
       border-bottom: 1px solid #eee;
       padding-bottom: 20px;
+    }
+    /* 确保highlight.js不会影响换行 */
+    .hljs {
+      white-space: pre !important;
+      display: block;
+      overflow-x: auto;
     }
   </style>
 </head>
@@ -53,8 +62,7 @@
     <h2>JavaScript 代码高亮测试</h2>
     <pre><code class="language-javascript">function example() {
   // 这是一个注释
-  const greeting = "Hello, World!";
-  console.log(greeting);
+  const greeting = "Hello, World!";console.log(greeting);
   
   return {
     message: greeting,

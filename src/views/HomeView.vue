@@ -314,11 +314,15 @@ const doSSE = (taskId) => {
       scrollToBottom();
     } else if (e.data.startsWith("[reasoning]")) {
       const chunk = e.data.replace("[reasoning]", "");
-      conversationHistory.value[currentIndex].reasoning += chunk;
+      // 解码URL编码的内容
+      const decodedChunk = decodeURIComponent(chunk);
+      conversationHistory.value[currentIndex].reasoning += decodedChunk;
       scrollToBottom();
     } else if (e.data.startsWith("[result]")) {
       const chunk = e.data.replace("[result]", "");
-      conversationHistory.value[currentIndex].content += chunk;
+      // 解码URL编码的内容
+      const decodedChunk = decodeURIComponent(chunk);
+      conversationHistory.value[currentIndex].content += decodedChunk;
       scrollToBottom();
     } else {
       console.log("Other SSE data:", e.data);
@@ -441,7 +445,7 @@ const clearConversation = async () => {
 
 /* 消息气泡样式 */
 .message-bubble {
-  max-width: 70%;
+  max-width: 90%;
   padding: 0.75rem 1rem;
   border-radius: 12px;
   word-wrap: break-word;
