@@ -67,7 +67,11 @@
             <n-button>上传文件</n-button>
           </n-upload>
 
-          <n-button type="info" @click="isGenerating ? stopGeneration() : sendMessage()" secondary>
+          <n-button
+            type="info"
+            @click="isGenerating ? stopGeneration() : sendMessage()"
+            secondary
+          >
             <n-icon size="22">
               <template v-if="isGenerating">
                 <Stop24Filled />
@@ -76,7 +80,7 @@
                 <Send24Filled />
               </template>
             </n-icon>
-            {{ isGenerating ? '停止' : '发送' }}
+            {{ isGenerating ? "停止" : "发送" }}
           </n-button>
           <n-button @click="clearConversation" type="info">清空对话</n-button>
         </div>
@@ -90,18 +94,19 @@ import { ref, nextTick, onMounted } from "vue";
 import { marked } from "marked";
 import { useMessage } from "naive-ui";
 import { Send24Filled, Stop24Filled } from "@vicons/fluent";
-import hljs from 'highlight.js';
-import 'highlight.js/styles/github.css';
+import { get, post, upload } from "@/utils/request";
+import hljs from "highlight.js";
+import "highlight.js/styles/github.css";
 
 // 配置marked使用highlight.js进行代码高亮
 marked.setOptions({
-  highlight: function(code, lang) {
+  highlight: function (code, lang) {
     if (lang && hljs.getLanguage(lang)) {
       return hljs.highlight(code, { language: lang }).value;
     }
     return hljs.highlightAuto(code).value;
   },
-  langPrefix: 'hljs language-',
+  langPrefix: "hljs language-",
   gfm: true,
   breaks: true,
   pedantic: false,
@@ -109,13 +114,17 @@ marked.setOptions({
   smartypants: false,
   renderer: new marked.Renderer(),
   // 修改escape函数，只在非代码块的情况下转义HTML标签
-  escape: function(html) {
-    if (html.includes('<pre>') || html.includes('<code>')) {
+  escape: function (html) {
+    if (html.includes("<pre>") || html.includes("<code>")) {
       return html;
     }
-    return html.replace(/</g, '&lt;').replace(/>/g, '&gt;');
-  }
+    return html.replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  },
 });
+let userId = ref(null);
+if (localStorage.getItem("userId")) {
+  userId.value = localStorage.getItem("userId");
+}
 
 // 1) 用户输入的文本
 const content = ref("");
@@ -187,25 +196,17 @@ const beforeUpload = async (data) => {
 
 const handleUpdateModel = async (value) => {
   console.log("选择了模型：", value);
-  const res = await fetch("http://192.168.1.164:3000/updateModel", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ model: value }),
-  });
+  const result = await post("/updateModel", { model: value });
   content.value = "";
   conversationHistory.value = [];
   currentTaskId.value = null;
-  const result = await res.json();
   console.log("更新模型结果：", result);
 };
 
 // 上传文件
 const customRequest = async (data) => {
-  const formData = new FormData();
-  formData.append("file", data.file.file);
-  const res = await fetch("http://");
-  if (res.ok) {
-    const result = await res.json();
+  try {
+    const result = await upload("/upload", data.file.file);
     console.log("上传文件结果：", result);
     if (result.code === 0) {
       message.success("上传成功");
@@ -213,7 +214,8 @@ const customRequest = async (data) => {
     } else {
       message.error("上传失败");
     }
-  } else {
+  } catch (error) {
+    console.error("上传出错：", error);
     message.error("上传失败");
   }
 };
@@ -226,14 +228,18 @@ const stopGeneration = () => {
     currentEvtSource.close();
     currentEvtSource = null;
     isGenerating.value = false;
-    
+
     // 在当前消息中添加提示
     const currentIndex = conversationHistory.value.length - 1;
-    if (currentIndex >= 0 && conversationHistory.value[currentIndex].role === 'assistant') {
-      conversationHistory.value[currentIndex].content += "\n\n*[用户已停止生成]*";
+    if (
+      currentIndex >= 0 &&
+      conversationHistory.value[currentIndex].role === "assistant"
+    ) {
+      conversationHistory.value[currentIndex].content +=
+        "\n\n*[用户已停止生成]*";
     }
-    
-    message.info('已停止生成回复');
+
+    message.info("已停止生成回复");
   }
 };
 
@@ -243,7 +249,7 @@ const stopGeneration = () => {
 const sendMessage = async () => {
   // 若输入为空，则不处理
   if (!content.value.trim()) return;
-  
+
   // 如果正在生成，则不处理
   if (isGenerating.value) return;
 
@@ -254,28 +260,26 @@ const sendMessage = async () => {
     role: "user",
     content: content.value,
   });
-  
+
   // 滚动到最新消息
   scrollToBottom();
 
   // 判断是首次还是后续
   if (!currentTaskId.value) {
     // 第一次：POST /start
-    const response = await fetch("http://192.168.1.164:3000/start", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ content: content.value }),
+    const result = await post("/start", {
+      content: content.value,
+      userId: userId.value,
     });
-    const result = await response.json();
     taskId = result.taskId;
     currentTaskId.value = taskId;
   } else {
     // 后续：POST /continue
     taskId = currentTaskId.value;
-    await fetch("http://192.168.1.164:3000/continue", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ taskId, content: content.value }),
+    await post("/continue", {
+      taskId,
+      content: content.value,
+      userId: userId.value,
     });
   }
 
@@ -292,10 +296,13 @@ const sendMessage = async () => {
 const doSSE = (taskId) => {
   // 设置生成状态为true
   isGenerating.value = true;
-  
+
   // 创建并保存EventSource实例
+  // 使用当前窗口的主机名和端口，而不是硬编码的IP地址
+  const host = window.location.hostname;
+  const port = "3000"; // 后端服务端口
   currentEvtSource = new EventSource(
-    `http://192.168.1.164:3000/events?taskId=${taskId}`
+    `http://${host}:${port}/events?taskId=${taskId}`
   );
 
   // 在对话历史中新建一条空的 AI 消息，准备拼接思考过程和结果
@@ -349,30 +356,43 @@ const scrollToBottom = () => {
   if (isUserScrolling.value) return;
 
   nextTick(() => {
-    const messagesContainer = document.querySelector('.messages');
+    const messagesContainer = document.querySelector(".messages");
     if (messagesContainer) {
       messagesContainer.scrollTop = messagesContainer.scrollHeight;
     }
   });
 };
+async function getUserId() {
+  const result = await get("/generateUserId");
+  console.log("获取用户ID：", result.userId);
+  userId.value = result.userId;
+  localStorage.setItem("userId", userId.value);
+}
 
 // 监听滚动事件
 onMounted(() => {
-  const messagesContainer = document.querySelector('.messages');
+  // 如果localStorage中没有userId，则获取新的userId
+  if (!userId.value) {
+    getUserId();
+  }
+
+  localStorage.setItem("userId", userId.value);
+  const messagesContainer = document.querySelector(".messages");
   if (messagesContainer) {
-    messagesContainer.addEventListener('scroll', () => {
+    messagesContainer.addEventListener("scroll", () => {
       // 检测是否是用户手动滚动
       const currentScrollTop = messagesContainer.scrollTop;
-      const maxScrollTop = messagesContainer.scrollHeight - messagesContainer.clientHeight;
-      
+      const maxScrollTop =
+        messagesContainer.scrollHeight - messagesContainer.clientHeight;
+
       // 更新用户滚动状态
       isUserScrolling.value = true;
-      
+
       // 如果滚动到底部，重新启用自动滚动
       if (Math.abs(currentScrollTop - maxScrollTop) < 10) {
         isUserScrolling.value = false;
       }
-      
+
       lastScrollTop.value = currentScrollTop;
     });
   }
@@ -386,14 +406,11 @@ const clearConversation = async () => {
   if (isGenerating.value) {
     stopGeneration();
   }
-  
+
   content.value = "";
   conversationHistory.value = [];
   currentTaskId.value = null;
-  const res = await fetch("http://192.168.1.164:3000/clear", {
-    method: "get",
-  });
-  const result = await res.json();
+  const result = await get("/clear");
   console.log("清空对话结果：", result);
 };
 </script>
@@ -445,7 +462,7 @@ const clearConversation = async () => {
 
 /* 消息气泡样式 */
 .message-bubble {
-  max-width: 90%;
+  max-width: 100%;
   padding: 0.75rem 1rem;
   border-radius: 12px;
   word-wrap: break-word;
@@ -473,7 +490,8 @@ const clearConversation = async () => {
   padding: 12px 16px;
   margin: 8px 0;
   overflow-x: auto;
-  font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, Courier, monospace;
+  font-family:
+    "SFMono-Regular", Consolas, "Liberation Mono", Menlo, Courier, monospace;
   font-size: 16px;
   line-height: 1.45;
   border: 1px solid #e1e4e8;
@@ -482,7 +500,8 @@ const clearConversation = async () => {
 
 /* 代码行样式 */
 :deep(code) {
-  font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, Courier, monospace;
+  font-family:
+    "SFMono-Regular", Consolas, "Liberation Mono", Menlo, Courier, monospace;
   font-size: 16px;
   padding: 2px 4px;
   border-radius: 3px;
