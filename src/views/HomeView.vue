@@ -122,7 +122,7 @@ marked.setOptions({
   },
 });
 let userId = ref(null);
-if (localStorage.getItem("userId")) {
+if (localStorage.getItem("userId") && localStorage.getItem("userId") !== null) {
   userId.value = localStorage.getItem("userId");
 }
 
@@ -298,12 +298,8 @@ const doSSE = (taskId) => {
   isGenerating.value = true;
 
   // 创建并保存EventSource实例
-  // 使用当前窗口的主机名和端口，而不是硬编码的IP地址
-  const host = window.location.hostname;
-  const port = "3000"; // 后端服务端口
-  currentEvtSource = new EventSource(
-    `http://${host}:${port}/events?taskId=${taskId}`
-  );
+  // 使用配置的API代理访问后端
+  currentEvtSource = new EventSource(`/api/events?taskId=${taskId}`);
 
   // 在对话历史中新建一条空的 AI 消息，准备拼接思考过程和结果
   conversationHistory.value.push({
