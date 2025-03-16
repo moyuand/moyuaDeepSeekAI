@@ -49,7 +49,6 @@
       <div class="input-area">
         <n-input
           v-model:value="content"
-          type="textarea"
           placeholder="请输入对话内容"
           @keydown.enter="sendMessage"
         />
@@ -63,16 +62,22 @@
               'naive-data': 'cool! naive!',
             }"
             @before-upload="beforeUpload"
+            list-type="image-card"
           >
-            <n-button>上传文件</n-button>
+            <n-button circle quaternary>
+              <n-icon size="36">
+                <AddCircle32Filled />
+              </n-icon>
+            </n-button>
           </n-upload>
 
           <n-button
-            type="info"
+            circle
             @click="isGenerating ? stopGeneration() : sendMessage()"
-            secondary
+            quaternary
+            type="primary"
           >
-            <n-icon size="22">
+            <n-icon size="28">
               <template v-if="isGenerating">
                 <Stop24Filled />
               </template>
@@ -80,9 +85,12 @@
                 <Send24Filled />
               </template>
             </n-icon>
-            {{ isGenerating ? "停止" : "发送" }}
           </n-button>
-          <n-button @click="clearConversation" type="info">清空对话</n-button>
+          <n-button @click="clearConversation" quaternary circle>
+            <n-icon size="28">
+              <Delete16Filled />
+            </n-icon>
+          </n-button>
         </div>
       </div>
     </div>
@@ -93,7 +101,12 @@
 import { ref, nextTick, onMounted, onUnmounted } from "vue";
 import { marked } from "marked";
 import { useMessage } from "naive-ui";
-import { Send24Filled, Stop24Filled } from "@vicons/fluent";
+import {
+  Send24Filled,
+  Stop24Filled,
+  Delete16Filled,
+  AddCircle32Filled,
+} from "@vicons/fluent";
 import { get, post, upload } from "@/utils/request";
 import hljs from "highlight.js";
 import "highlight.js/styles/github.css";
