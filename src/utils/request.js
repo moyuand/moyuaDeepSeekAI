@@ -32,10 +32,74 @@ service.interceptors.request.use(
 // 响应拦截器
 service.interceptors.response.use(
   (response) => {
-    return response.data;
+    // 如果响应中包含错误信息，也需要提取出来
+    const data = response.data;
+
+    // 检查响应结构中是否包含错误信息
+    if (data && data.error) {
+      // 创建自定义错误对象
+      const errorObj = new Error(data.error);
+      errorObj.isApiError = true;
+      errorObj.apiData = data;
+      errorObj.status = response.status;
+      return Promise.reject(errorObj);
+    }
+
+    return data;
   },
   (error) => {
-    return Promise.reject(error);
+    // 格式化错误信息
+    let errorMsg = "服务器请求失败";
+    let errorData = {};
+
+    if (error.response) {
+      // 服务器返回了错误状态码
+      const { status, data } = error.response;
+      errorMsg = data.error || data.message || `请求错误 (${status})`;
+      errorData = data;
+
+      // 根据状态码定制错误信息
+      switch (status) {
+        case 400:
+          errorMsg = data.error || "请求参数错误";
+          break;
+        case 401:
+          errorMsg = "认证失败，请重新登录";
+          break;
+        case 403:
+          errorMsg = "您没有权限访问该资源";
+          break;
+        case 404:
+          errorMsg = "请求的资源不存在";
+          break;
+        case 500:
+          errorMsg = "服务器内部错误";
+          break;
+        default:
+          errorMsg = data.error || `请求失败 (${status})`;
+      }
+    } else if (error.request) {
+      // 请求发送了但没有收到响应
+      errorMsg = "服务器无响应";
+    } else if (error.message) {
+      // 请求设置时发生错误
+      if (error.message.includes("timeout")) {
+        errorMsg = "请求超时，请稍后重试";
+      } else {
+        errorMsg = error.message;
+      }
+    }
+
+    // 增强错误对象
+    const enhancedError = new Error(errorMsg);
+    enhancedError.isApiError = true;
+    enhancedError.originalError = error;
+    enhancedError.errorData = errorData;
+
+    // 日志记录错误
+    console.error("API请求错误:", errorMsg, error);
+
+    return Promise.reject(enhancedError);
   }
 );
 

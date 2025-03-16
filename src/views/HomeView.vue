@@ -90,7 +90,7 @@
 </template>
 
 <script setup>
-import { ref, nextTick, onMounted } from "vue";
+import { ref, nextTick, onMounted, onUnmounted } from "vue";
 import { marked } from "marked";
 import { useMessage } from "naive-ui";
 import { Send24Filled, Stop24Filled } from "@vicons/fluent";
@@ -151,7 +151,7 @@ const options = ref([
   },
   {
     label: "通义千问",
-    value: "qwen-omni-turbo",
+    value: "qwq-plus",
   },
 ]);
 
@@ -196,11 +196,17 @@ const beforeUpload = async (data) => {
 
 const handleUpdateModel = async (value) => {
   console.log("选择了模型：", value);
-  const result = await post("/updateModel", { model: value });
-  content.value = "";
-  conversationHistory.value = [];
-  currentTaskId.value = null;
-  console.log("更新模型结果：", result);
+  try {
+    const result = await post("/updateModel", { model: value });
+    content.value = "";
+    conversationHistory.value = [];
+    currentTaskId.value = null;
+    console.log("更新模型结果：", result);
+    message.success(`已切换到${value}模型`);
+  } catch (error) {
+    message.error(error.message || "切换模型失败");
+    console.error("更新模型失败:", error);
+  }
 };
 
 // 上传文件
@@ -212,11 +218,11 @@ const customRequest = async (data) => {
       message.success("上传成功");
       content.value = result.data.url;
     } else {
-      message.error("上传失败");
+      message.error(result.message || "上传失败");
     }
   } catch (error) {
     console.error("上传出错：", error);
-    message.error("上传失败");
+    message.error(error.message || "上传失败");
   }
 };
 
@@ -264,30 +270,58 @@ const sendMessage = async () => {
   // 滚动到最新消息
   scrollToBottom();
 
-  // 判断是首次还是后续
-  if (!currentTaskId.value) {
-    // 第一次：POST /start
-    const result = await post("/start", {
-      content: content.value,
-      userId: userId.value,
-    });
-    taskId = result.taskId;
-    currentTaskId.value = taskId;
-  } else {
-    // 后续：POST /continue
-    taskId = currentTaskId.value;
-    await post("/continue", {
-      taskId,
-      content: content.value,
-      userId: userId.value,
-    });
+  try {
+    // 判断是首次还是后续
+    if (!currentTaskId.value) {
+      // 第一次：POST /start
+      const result = await post("/start", {
+        content: content.value,
+        userId: userId.value,
+      });
+
+      if (!result.taskId) {
+        throw new Error("服务器未返回有效的taskId");
+      }
+
+      taskId = result.taskId;
+      currentTaskId.value = taskId;
+    } else {
+      // 后续：POST /continue
+      taskId = currentTaskId.value;
+      await post("/continue", {
+        taskId,
+        content: content.value,
+        userId: userId.value,
+      });
+    }
+
+    // 清空输入框
+    content.value = "";
+
+    // 建立 SSE 连接
+    doSSE(taskId);
+  } catch (error) {
+    // 显示错误信息
+    message.error(error.message || "发送消息失败");
+    console.error("发送消息失败:", error);
+
+    // 从对话记录中移除最后一条消息
+    if (conversationHistory.value.length > 0) {
+      conversationHistory.value.pop();
+    }
   }
+};
 
-  // 清空输入框
-  content.value = "";
+// 添加连接检测和重连机制
+let connectionCheckInterval = null;
 
-  // 建立 SSE 连接
-  doSSE(taskId);
+// 检查连接状态并在需要时重连
+// eslint-disable-next-line no-unused-vars
+const checkConnection = () => {
+  if (currentTaskId.value && !currentEvtSource) {
+    console.log("检测到连接已断开，尝试重新连接...");
+    doSSE(currentTaskId.value);
+  }
 };
 
 /**
@@ -299,7 +333,9 @@ const doSSE = (taskId) => {
 
   // 创建并保存EventSource实例
   // 使用配置的API代理访问后端
-  currentEvtSource = new EventSource(`/api/events?taskId=${taskId}`);
+  currentEvtSource = new EventSource(
+    `/api/events?taskId=${taskId}&userId=${userId.value || ""}`
+  );
 
   // 在对话历史中新建一条空的 AI 消息，准备拼接思考过程和结果
   conversationHistory.value.push({
@@ -309,11 +345,40 @@ const doSSE = (taskId) => {
   });
   const currentIndex = conversationHistory.value.length - 1;
 
-  currentEvtSource.onmessage = (e) => {
-    if (e.data === "[DONE]") {
+  // 添加超时保护，防止长时间无响应
+  const connectionTimeout = setTimeout(() => {
+    console.log("EventSource连接超时，自动关闭");
+    message.warning("AI响应超时，请重试");
+    closeEventSource();
+
+    // 添加超时提示到消息中
+    if (conversationHistory.value[currentIndex]) {
+      conversationHistory.value[currentIndex].content +=
+        "\n\n**[系统提示]** 响应超时，请重试";
+    }
+  }, 60000); // 60秒超时
+
+  // 添加统一的关闭EventSource函数
+  const closeEventSource = () => {
+    if (currentEvtSource) {
+      console.log("关闭EventSource连接");
       currentEvtSource.close();
       currentEvtSource = null;
       isGenerating.value = false;
+
+      // 清除超时定时器
+      clearTimeout(connectionTimeout);
+    }
+  };
+
+  currentEvtSource.onmessage = (e) => {
+    // 处理完成信号 - 增加对status: completed的判断
+    if (
+      e.data === "[DONE]" ||
+      e.data.includes('"status": "completed"') ||
+      e.data.includes('"status":"completed"')
+    ) {
+      closeEventSource();
       scrollToBottom();
     } else if (e.data.startsWith("[reasoning]")) {
       const chunk = e.data.replace("[reasoning]", "");
@@ -327,17 +392,58 @@ const doSSE = (taskId) => {
       const decodedChunk = decodeURIComponent(chunk);
       conversationHistory.value[currentIndex].content += decodedChunk;
       scrollToBottom();
+    } else if (e.data.startsWith("[error]")) {
+      // 处理错误信息
+      const errorMsg = e.data.replace("[error]", "");
+      const decodedError = decodeURIComponent(errorMsg);
+      message.error(decodedError || "AI响应出错");
+      conversationHistory.value[currentIndex].content +=
+        `\n\n**[错误]** ${decodedError}`;
+      closeEventSource();
+      scrollToBottom();
     } else {
       console.log("Other SSE data:", e.data);
+      // 检查是否包含完成信息或错误信息
+      try {
+        const data = JSON.parse(e.data);
+        if (data.status === "completed") {
+          closeEventSource();
+          scrollToBottom();
+        } else if (data.error) {
+          message.error(data.error || "AI响应出错");
+          conversationHistory.value[currentIndex].content +=
+            `\n\n**[错误]** ${data.error}`;
+          closeEventSource();
+          scrollToBottom();
+        }
+      } catch (error) {
+        // 非JSON格式，忽略错误
+        console.debug("非JSON格式数据:", e.data, "解析错误:", error.message);
+      }
     }
+  };
+
+  currentEvtSource.onopen = () => {
+    console.log("EventSource连接已打开");
   };
 
   currentEvtSource.onerror = (err) => {
     console.error("EventSource 错误:", err);
-    currentEvtSource.close();
-    currentEvtSource = null;
-    isGenerating.value = false;
+    message.error("连接错误，请刷新页面重试");
+
+    // 在消息中显示错误提示
+    if (conversationHistory.value[currentIndex]) {
+      conversationHistory.value[currentIndex].content +=
+        "\n\n**[系统错误]** 连接中断，请刷新页面重试";
+    }
+
+    closeEventSource();
   };
+
+  // 在组件卸载时确保清理连接
+  onUnmounted(() => {
+    closeEventSource();
+  });
 };
 
 // 添加用户滚动状态变量
@@ -392,6 +498,13 @@ onMounted(() => {
       lastScrollTop.value = currentScrollTop;
     });
   }
+
+  // 确保在页面离开或刷新时关闭连接
+  window.addEventListener("beforeunload", () => {
+    if (currentEvtSource) {
+      currentEvtSource.close();
+    }
+  });
 });
 
 /**
@@ -406,9 +519,44 @@ const clearConversation = async () => {
   content.value = "";
   conversationHistory.value = [];
   currentTaskId.value = null;
-  const result = await get("/clear");
-  console.log("清空对话结果：", result);
+
+  try {
+    const result = await get("/clear");
+    console.log("清空对话结果：", result);
+    message.success("对话已清空");
+  } catch (error) {
+    console.error("清空对话失败:", error);
+    message.error(error.message || "清空对话失败");
+  }
 };
+
+// 在组件卸载时清理定时器
+onUnmounted(() => {
+  if (connectionCheckInterval) {
+    clearInterval(connectionCheckInterval);
+  }
+  if (currentEvtSource) {
+    currentEvtSource.close();
+  }
+});
+
+// 添加一个保活机制，定期向服务器发送请求
+const keepAlive = async () => {
+  if (currentTaskId.value) {
+    try {
+      await get(`/keepalive?taskId=${currentTaskId.value}`);
+    } catch (error) {
+      console.error("保活请求失败:", error);
+    }
+  }
+};
+
+// 设置保活定时器，比如每5分钟发送一次
+const keepAliveInterval = setInterval(keepAlive, 5 * 60 * 1000);
+
+onUnmounted(() => {
+  clearInterval(keepAliveInterval);
+});
 </script>
 
 <style scoped>
