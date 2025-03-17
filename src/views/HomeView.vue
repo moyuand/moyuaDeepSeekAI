@@ -48,12 +48,14 @@
       <!-- 输入区域固定在底部 -->
       <div class="input-area">
         <n-input
+          round
           v-model:value="content"
           placeholder="请输入对话内容"
           @keydown.enter="sendMessage"
         />
         <div class="btn-group">
           <n-upload
+            ref="uploadRef"
             :custom-request="customRequest"
             :headers="{
               'naive-info': 'hello!',
@@ -142,6 +144,11 @@ if (localStorage.getItem("userId") && localStorage.getItem("userId") !== null) {
 // 1) 用户输入的文本
 const content = ref("");
 
+// 添加文件上传状态跟踪变量
+const hasUploadedFile = ref(false);
+// 文件上传组件引用
+const uploadRef = ref(null);
+
 // 2) 多轮对话记录
 //    每个元素示例：
 //    - 用户消息：{ role: 'user', content: '...' }
@@ -164,7 +171,7 @@ const options = ref([
   },
   {
     label: "通义千问",
-    value: "qwq-plus",
+    value: "qwen-omni-turbo",
   },
 ]);
 
@@ -225,11 +232,13 @@ const handleUpdateModel = async (value) => {
 // 上传文件
 const customRequest = async (data) => {
   try {
+    console.log("上传文件：", data.file.file);
     const result = await upload("/upload", data.file.file);
     console.log("上传文件结果：", result);
     if (result.code === 0) {
       message.success("上传成功");
       content.value = result.data.url;
+      hasUploadedFile.value = true; // 设置文件上传状态为true
     } else {
       message.error(result.message || "上传失败");
     }
@@ -290,6 +299,7 @@ const sendMessage = async () => {
       const result = await post("/start", {
         content: content.value,
         userId: userId.value,
+        imageData: hasUploadedFile.value, // 添加文件数据标记
       });
 
       if (!result.taskId) {
@@ -305,11 +315,21 @@ const sendMessage = async () => {
         taskId,
         content: content.value,
         userId: userId.value,
+        imageData: hasUploadedFile.value, // 添加文件数据标记
       });
     }
 
     // 清空输入框
     content.value = "";
+
+    // 重置文件上传状态并清空文件列表
+    if (hasUploadedFile.value) {
+      hasUploadedFile.value = false;
+      // 清空上传组件的文件列表
+      if (uploadRef.value) {
+        uploadRef.value.clear();
+      }
+    }
 
     // 建立 SSE 连接
     doSSE(taskId);
@@ -533,6 +553,12 @@ const clearConversation = async () => {
   conversationHistory.value = [];
   currentTaskId.value = null;
 
+  // 重置文件上传状态并清空文件列表
+  hasUploadedFile.value = false;
+  if (uploadRef.value) {
+    uploadRef.value.clear();
+  }
+
   try {
     const result = await get("/clear");
     console.log("清空对话结果：", result);
@@ -739,5 +765,17 @@ onUnmounted(() => {
   .message-bubble {
     max-width: 85%;
   }
+}
+
+:deep() .n-upload-trigger.n-upload-trigger--image-card {
+  height: 48px;
+  width: 48px;
+}
+:deep() .n-upload-file-list .n-upload-file.n-upload-file--image-card-type {
+  height: 48px;
+  width: 48px;
+}
+:deep() .n-upload-file-list.n-upload-file-list--grid {
+  grid-template-columns: repeat(auto-fill, 48px);
 }
 </style>
