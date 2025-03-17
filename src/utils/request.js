@@ -75,6 +75,9 @@ service.interceptors.response.use(
         case 500:
           errorMsg = "服务器内部错误";
           break;
+        case 413:
+          errorMsg = "上传图片超过了 20MB";
+          break;
         default:
           errorMsg = data.error || `请求失败 (${status})`;
       }
