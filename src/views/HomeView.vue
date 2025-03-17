@@ -63,7 +63,9 @@
             :data="{
               'naive-data': 'cool! naive!',
             }"
+            :max="1"
             @before-upload="beforeUpload"
+            @remove="handleRemove"
             list-type="image-card"
           >
             <n-button circle quaternary>
@@ -148,6 +150,8 @@ const content = ref("");
 const hasUploadedFile = ref(false);
 // 文件上传组件引用
 const uploadRef = ref(null);
+// 当前上传的文件ID，用于跟踪
+const currentFileId = ref(null);
 
 // 2) 多轮对话记录
 //    每个元素示例：
@@ -229,22 +233,35 @@ const handleUpdateModel = async (value) => {
   }
 };
 
+// 处理文件移除事件
+const handleRemove = () => {
+  console.log("文件已手动移除");
+  hasUploadedFile.value = false;
+  content.value = ""; // 清空内容框中的图片URL
+  currentFileId.value = null;
+};
+
 // 上传文件
 const customRequest = async (data) => {
   try {
-    console.log("上传文件：", data.file.file);
+    console.log("开始上传文件：", data.file.file);
+    // 生成唯一文件ID
+    currentFileId.value = Date.now().toString();
+
     const result = await upload("/upload", data.file.file);
     console.log("上传文件结果：", result);
-    if (result.code === 0) {
+    if (result.success) {
       message.success("上传成功");
-      content.value = result.data.url;
       hasUploadedFile.value = true; // 设置文件上传状态为true
+      console.log("已设置hasUploadedFile=true，当前值:", hasUploadedFile.value);
     } else {
       message.error(result.message || "上传失败");
+      currentFileId.value = null;
     }
   } catch (error) {
     console.error("上传出错：", error);
     message.error(error.message || "上传失败");
+    currentFileId.value = null;
   }
 };
 
@@ -283,6 +300,9 @@ const sendMessage = async () => {
 
   let taskId;
 
+  // 添加日志，检查上传状态
+  console.log("发送消息前，文件上传状态：", hasUploadedFile.value);
+
   // 先将用户消息 push 到对话记录
   conversationHistory.value.push({
     role: "user",
@@ -296,10 +316,11 @@ const sendMessage = async () => {
     // 判断是首次还是后续
     if (!currentTaskId.value) {
       // 第一次：POST /start
+      console.log("调用start接口，imageData=", hasUploadedFile.value);
       const result = await post("/start", {
         content: content.value,
         userId: userId.value,
-        imageData: hasUploadedFile.value, // 添加文件数据标记
+        imageData: hasUploadedFile.value,
       });
 
       if (!result.taskId) {
@@ -310,25 +331,43 @@ const sendMessage = async () => {
       currentTaskId.value = taskId;
     } else {
       // 后续：POST /continue
+      console.log("调用continue接口，imageData=", hasUploadedFile.value);
       taskId = currentTaskId.value;
       await post("/continue", {
         taskId,
         content: content.value,
         userId: userId.value,
-        imageData: hasUploadedFile.value, // 添加文件数据标记
+        imageData: hasUploadedFile.value,
       });
     }
 
     // 清空输入框
     content.value = "";
 
-    // 重置文件上传状态并清空文件列表
+    // 重置文件上传状态并主动清空文件列表
     if (hasUploadedFile.value) {
+      console.log("准备清空文件列表和重置状态");
+      // 手动清空文件列表 - 使用Naive UI的方法
       hasUploadedFile.value = false;
-      // 清空上传组件的文件列表
-      if (uploadRef.value) {
-        uploadRef.value.clear();
-      }
+      currentFileId.value = null;
+
+      // 给DOM一点时间更新
+      setTimeout(() => {
+        if (uploadRef.value) {
+          try {
+            console.log("清空文件列表");
+            // 使用更直接的方式清空
+            uploadRef.value.clear();
+            // 直接操作文件列表DOM元素(备用方案)
+            const fileListEl = document.querySelector(".n-upload-file-list");
+            if (fileListEl) {
+              fileListEl.innerHTML = "";
+            }
+          } catch (e) {
+            console.error("清空文件列表失败:", e);
+          }
+        }
+      }, 100);
     }
 
     // 建立 SSE 连接
