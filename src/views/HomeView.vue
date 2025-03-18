@@ -487,6 +487,7 @@ const doSSE = (taskId) => {
       e.data.includes('"status": "completed"') ||
       e.data.includes('"status":"completed"')
     ) {
+      isNormalClosure = true; // 立即标记为正常关闭，防止后续触发onerror
       closeEventSource();
       scrollToBottom();
     } else if (e.data.startsWith("[reasoning]")) {
@@ -537,6 +538,15 @@ const doSSE = (taskId) => {
   };
 
   currentEvtSource.onerror = (err) => {
+    // 在检查连接已关闭或正在关闭时不显示错误
+    if (
+      currentEvtSource &&
+      (currentEvtSource.readyState === 2 || isNormalClosure)
+    ) {
+      console.log("EventSource已关闭或正在关闭，忽略错误");
+      return;
+    }
+
     console.error("EventSource 错误:", err);
 
     // 只有在非正常关闭的情况下才显示错误
