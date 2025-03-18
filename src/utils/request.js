@@ -65,9 +65,22 @@ service.interceptors.response.use(
           break;
         case 401:
           errorMsg = "认证失败，请重新登录";
+          // 清除用户信息并跳转到登录页
+          localStorage.removeItem("userId");
+          localStorage.removeItem("username");
+          localStorage.removeItem("apiKey");
+
+          // 使用window.location跳转到登录页，确保整个应用重新加载
+          window.location.href = "/login";
           break;
         case 403:
           errorMsg = "您没有权限访问该资源";
+          // 权限错误也需要重新登录
+          localStorage.removeItem("userId");
+          localStorage.removeItem("username");
+          localStorage.removeItem("apiKey");
+
+          window.location.href = "/login";
           break;
         case 404:
           errorMsg = "请求的资源不存在";
@@ -114,6 +127,21 @@ export const get = (url, params) => {
 // 封装POST请求
 export const post = (url, data) => {
   return service.post(url, data);
+};
+
+// 封装PUT请求
+export const put = (url, data) => {
+  return service.put(url, data);
+};
+
+// 封装PATCH请求
+export const patch = (url, data) => {
+  return service.patch(url, data);
+};
+
+// 封装DELETE请求
+export const del = (url, params) => {
+  return service.delete(url, { params });
 };
 
 // 封装上传文件的请求

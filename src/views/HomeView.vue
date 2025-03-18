@@ -2,9 +2,9 @@
   <n-message-provider>
     <!-- 整个页面使用 flex-column 布局 -->
     <div class="chat-container">
-      <n-page-header title="和 AI 的聊天小助手" class="p-4">
+      <n-page-header title="墨鱼AI智能助手" class="p-4">
         <template #avatar>
-          <n-avatar class="text-blue-500 bg-blue-100" round>Moyu</n-avatar>
+          <n-avatar class="text-blue-500 bg-blue-100" round>AI</n-avatar>
         </template>
         <template #extra>
           <n-space>
@@ -14,6 +14,16 @@
               placeholder="请选择模型"
               @update-value="handleUpdateModel"
             />
+
+            <n-dropdown
+              trigger="click"
+              :options="userMenuOptions"
+              @select="handleSelect"
+            >
+              <n-avatar round size="small" class="cursor-pointer user-avatar">
+                {{ getAvatarText() }}
+              </n-avatar>
+            </n-dropdown>
           </n-space>
         </template>
       </n-page-header>
@@ -78,10 +88,9 @@
           <n-button
             circle
             @click="isGenerating ? stopGeneration() : sendMessage()"
-            quaternary
             type="primary"
           >
-            <n-icon size="28">
+            <n-icon size="22">
               <template v-if="isGenerating">
                 <Stop24Filled />
               </template>
@@ -91,7 +100,7 @@
             </n-icon>
           </n-button>
           <n-button @click="clearConversation" quaternary circle>
-            <n-icon size="28">
+            <n-icon size="22">
               <Delete16Filled />
             </n-icon>
           </n-button>
@@ -102,9 +111,10 @@
 </template>
 
 <script setup>
-import { ref, nextTick, onMounted, onUnmounted } from "vue";
+import { ref, nextTick, onMounted, onUnmounted, computed } from "vue";
 import { marked } from "marked";
 import { useMessage } from "naive-ui";
+import { useRouter } from "vue-router";
 import {
   Send24Filled,
   Stop24Filled,
@@ -250,18 +260,41 @@ const customRequest = async (data) => {
 
     const result = await upload("/upload", data.file.file);
     console.log("上传文件结果：", result);
-    if (result.success) {
+    if (result.code === 0) {
       message.success("上传成功");
+      content.value = result.data.url;
       hasUploadedFile.value = true; // 设置文件上传状态为true
       console.log("已设置hasUploadedFile=true，当前值:", hasUploadedFile.value);
     } else {
       message.error(result.message || "上传失败");
       currentFileId.value = null;
+      hasUploadedFile.value = false;
+
+      // 上传失败时清空文件列表
+      if (uploadRef.value) {
+        try {
+          console.log("上传失败，清空文件列表");
+          uploadRef.value.clear();
+        } catch (e) {
+          console.error("清空文件列表失败:", e);
+        }
+      }
     }
   } catch (error) {
     console.error("上传出错：", error);
     message.error(error.message || "上传失败");
     currentFileId.value = null;
+    hasUploadedFile.value = false;
+
+    // 上传出错时清空文件列表
+    if (uploadRef.value) {
+      try {
+        console.log("上传出错，清空文件列表");
+        uploadRef.value.clear();
+      } catch (e) {
+        console.error("清空文件列表失败:", e);
+      }
+    }
   }
 };
 
@@ -635,6 +668,61 @@ const keepAliveInterval = setInterval(keepAlive, 5 * 60 * 1000);
 onUnmounted(() => {
   clearInterval(keepAliveInterval);
 });
+
+const router = useRouter();
+
+// 用户菜单选项
+const userMenuOptions = computed(() => {
+  return [
+    {
+      label: "历史记录",
+      key: "history",
+    },
+    {
+      label: "设置",
+      key: "settings",
+    },
+    {
+      type: "divider",
+      key: "divider",
+    },
+    {
+      label: "退出登录",
+      key: "logout",
+    },
+  ];
+});
+
+// 获取头像显示文本
+const getAvatarText = () => {
+  const username = localStorage.getItem("username");
+  if (!username) return "U";
+  return username.charAt(0).toUpperCase();
+};
+
+// 处理菜单选择
+const handleSelect = (key) => {
+  switch (key) {
+    case "history":
+      router.push("/history");
+      break;
+    case "settings":
+      router.push("/settings");
+      break;
+    case "home":
+      router.push("/chat");
+      break;
+    case "logout":
+      // 清除本地存储数据
+      localStorage.removeItem("userId");
+      localStorage.removeItem("username");
+      localStorage.removeItem("apiKey");
+
+      // 跳转到登录页
+      router.push("/login");
+      break;
+  }
+};
 </script>
 
 <style scoped>
