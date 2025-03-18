@@ -436,6 +436,9 @@ const doSSE = (taskId) => {
   // 设置生成状态为true
   isGenerating.value = true;
 
+  // 添加标记，用于跟踪连接是否正常关闭
+  let isNormalClosure = false;
+
   // 创建并保存EventSource实例
   // 使用配置的API代理访问后端
   currentEvtSource = new EventSource(
@@ -467,6 +470,7 @@ const doSSE = (taskId) => {
   const closeEventSource = () => {
     if (currentEvtSource) {
       console.log("关闭EventSource连接");
+      isNormalClosure = true; // 标记连接已正常关闭
       currentEvtSource.close();
       currentEvtSource = null;
       isGenerating.value = false;
@@ -534,15 +538,19 @@ const doSSE = (taskId) => {
 
   currentEvtSource.onerror = (err) => {
     console.error("EventSource 错误:", err);
-    message.error("连接错误，请刷新页面重试");
 
-    // 在消息中显示错误提示
-    if (conversationHistory.value[currentIndex]) {
-      conversationHistory.value[currentIndex].content +=
-        "\n\n**[系统错误]** 连接中断，请刷新页面重试";
+    // 只有在非正常关闭的情况下才显示错误
+    if (!isNormalClosure) {
+      message.error("连接错误，请刷新页面重试");
+
+      // 在消息中显示错误提示
+      if (conversationHistory.value[currentIndex]) {
+        conversationHistory.value[currentIndex].content +=
+          "\n\n**[系统错误]** 连接中断，请刷新页面重试";
+      }
+
+      closeEventSource();
     }
-
-    closeEventSource();
   };
 
   // 在组件卸载时确保清理连接
