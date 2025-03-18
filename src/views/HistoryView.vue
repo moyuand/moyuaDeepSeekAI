@@ -96,14 +96,15 @@
           </n-list-item>
         </n-list>
 
-        <div class="pagination-container">
+        <div class="pagination-wrapper">
           <n-pagination
-            v-model:page="page"
-            :page-count="pageCount"
+            v-model:page="currentPage"
             :page-size="pageSize"
-            :item-count="totalCount"
+            :item-count="total"
             show-size-picker
+            :page-sizes="[10, 20, 30, 40]"
             @update:page="fetchHistory"
+            @update:page-size="onPageSizeChange"
           />
         </div>
       </div>
@@ -164,10 +165,9 @@ const loading = ref(true);
 const detailLoading = ref(false);
 
 // 分页数据
-const page = ref(1);
+const currentPage = ref(1);
 const pageSize = ref(10);
-const pageCount = ref(1);
-const totalCount = ref(0);
+const total = ref(0);
 
 // 历史记录数据
 const tasks = ref([]);
@@ -211,6 +211,13 @@ const formatContent = (content) => {
   return marked(content);
 };
 
+// 页面大小变化处理函数
+const onPageSizeChange = (size) => {
+  pageSize.value = size;
+  currentPage.value = 1; // 重置到第一页
+  fetchHistory();
+};
+
 // 获取聊天历史
 const fetchHistory = async () => {
   try {
@@ -219,15 +226,14 @@ const fetchHistory = async () => {
     const result = await get("/history", {
       userId: userId.value,
       limit: pageSize.value,
-      offset: (page.value - 1) * pageSize.value,
+      offset: (currentPage.value - 1) * pageSize.value,
     });
 
     tasks.value = result.tasks || [];
 
     // 计算总页数
     if (result.total) {
-      totalCount.value = result.total;
-      pageCount.value = Math.ceil(result.total / pageSize.value);
+      total.value = result.total;
     }
   } catch (error) {
     console.error("获取聊天历史失败:", error);
@@ -357,7 +363,7 @@ onMounted(() => {
   font-size: 0.9rem;
 }
 
-.pagination-container {
+.pagination-wrapper {
   margin-top: 20px;
   display: flex;
   justify-content: center;

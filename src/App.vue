@@ -1,9 +1,41 @@
 <script setup>
-import { onMounted } from "vue";
+import { onMounted, provide, ref } from "vue";
 import { useRouter } from "vue-router";
 import { get } from "@/utils/request";
+import {
+  useOsTheme,
+  darkTheme,
+  NConfigProvider,
+  NDialogProvider,
+  NMessageProvider,
+} from "naive-ui";
 
 const router = useRouter();
+const osThemeRef = useOsTheme();
+
+// 主题设置
+const themeMode = ref(localStorage.getItem("themeMode") || "light"); // 'light', 'dark', 'system'
+const theme = ref(null);
+
+// 监听主题变化
+const updateTheme = () => {
+  if (themeMode.value === "system") {
+    theme.value = osThemeRef.value === "dark" ? darkTheme : null;
+  } else {
+    theme.value = themeMode.value === "dark" ? darkTheme : null;
+  }
+  localStorage.setItem("themeMode", themeMode.value);
+};
+
+// 初始加载时设置主题
+updateTheme();
+
+// 提供主题变更函数给子组件使用
+provide("themeMode", themeMode);
+provide("changeTheme", (mode) => {
+  themeMode.value = mode;
+  updateTheme();
+});
 
 // 全局登录检查函数
 const checkLoginStatus = async () => {
@@ -76,11 +108,14 @@ onMounted(() => {
         <RouterLink to="/about">About</RouterLink>
       </nav>
     </div> -->
-  <n-dialog-provider>
-    <n-message-provider>
-      <RouterView />
-    </n-message-provider>
-  </n-dialog-provider>
+  <n-config-provider :theme="theme">
+    <n-dialog-provider>
+      <n-message-provider>
+        <!-- 现有的应用内容 -->
+        <router-view />
+      </n-message-provider>
+    </n-dialog-provider>
+  </n-config-provider>
 </template>
 
 <style scoped>

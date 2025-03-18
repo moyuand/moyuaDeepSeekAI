@@ -151,7 +151,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted, watch } from "vue";
+import { ref, onMounted, watch, inject } from "vue";
 import { useRouter } from "vue-router";
 import { useMessage, useDialog } from "naive-ui";
 import { get, post, put } from "@/utils/request";
@@ -206,13 +206,54 @@ const passwordRules = {
 const apiKey = ref("");
 const userId = ref("");
 
+// 主题设置 - 使用inject获取全局主题状态
+const changeTheme = inject("changeTheme");
+
+// 更新主题变量，绑定到全局状态
+const themeValue = ref(localStorage.getItem("themeMode") || "light");
+
 // 主题设置
-const themeValue = ref("light");
 const language = ref("zh-CN");
 const languageOptions = [
   { label: "简体中文", value: "zh-CN" },
   { label: "English", value: "en-US" },
 ];
+
+// 监听主题变化
+const updateTheme = async (value) => {
+  try {
+    await post("/settings/theme", {
+      userId: userId.value,
+      value,
+    });
+  } catch (error) {
+    console.error("更新主题设置失败:", error);
+  }
+};
+
+// 监听语言变化
+const updateLanguage = async (value) => {
+  try {
+    await post("/settings/language", {
+      userId: userId.value,
+      value,
+    });
+  } catch (error) {
+    console.error("更新语言设置失败:", error);
+  }
+};
+
+// 主题变化时同步更新全局主题
+watch(themeValue, (newValue) => {
+  // 更新全局主题
+  changeTheme(newValue);
+
+  // 保存到用户设置
+  updateTheme(newValue);
+});
+
+// 替换原来的watch监听
+watch(language, updateLanguage);
 
 // 返回上一页
 const goBack = () => {
@@ -242,7 +283,12 @@ const loadUserInfo = async () => {
     // 获取用户设置
     const settingsResult = await get(`/settings?userId=${userId.value}`);
     if (settingsResult.settings) {
-      themeValue.value = settingsResult.settings.theme || "light";
+      // 更新主题值并同步到全局
+      const savedTheme = settingsResult.settings.theme || "light";
+      themeValue.value = savedTheme;
+      // 同步到全局主题
+      changeTheme(savedTheme);
+
       language.value = settingsResult.settings.language || "zh-CN";
     }
   } catch (error) {
@@ -329,34 +375,6 @@ const resetApiKey = async () => {
     loading.value = false;
   }
 };
-
-// 监听主题变化
-const updateTheme = async (value) => {
-  try {
-    await post("/settings/theme", {
-      userId: userId.value,
-      value,
-    });
-  } catch (error) {
-    console.error("更新主题设置失败:", error);
-  }
-};
-
-// 监听语言变化
-const updateLanguage = async (value) => {
-  try {
-    await post("/settings/language", {
-      userId: userId.value,
-      value,
-    });
-  } catch (error) {
-    console.error("更新语言设置失败:", error);
-  }
-};
-
-// 监听主题和语言变化
-watch(themeValue, updateTheme);
-watch(language, updateLanguage);
 
 onMounted(() => {
   loadUserInfo();

@@ -732,6 +732,7 @@ const handleSelect = (key) => {
   flex-direction: column;
   height: 100vh;
   overflow: hidden;
+  background-color: var(--n-color-background);
 }
 
 /* 聊天记录区域自动占满上方剩余空间，并支持滚动 */
@@ -739,7 +740,7 @@ const handleSelect = (key) => {
   flex: 1;
   overflow-y: auto;
   padding: 1rem;
-  background-color: #fff;
+  background-color: var(--n-color-card);
 }
 
 /* 输入区域始终显示在底部 */
@@ -779,18 +780,18 @@ const handleSelect = (key) => {
   white-space: pre-wrap;
   line-height: 1.6;
   border: none; /* 确保没有边框 */
+  background-color: var(--n-color-card);
+  color: var(--n-text-color);
 }
 
 /* 用户气泡（右侧，绿色背景） */
 .user .message-bubble {
-  background-color: #dcf8c6;
-  color: #333;
+  background-color: var(--n-primary-color-hover);
 }
 
 /* AI 气泡（左侧，灰色背景） */
 .assistant .message-bubble {
-  /* background-color: #ececec;
-  color: #333; */
+  background-color: var(--n-color-modal);
 }
 
 /* 代码块样式，类似ChatGPT */
