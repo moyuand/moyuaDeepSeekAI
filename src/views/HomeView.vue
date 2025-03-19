@@ -1,119 +1,334 @@
 <template>
   <n-message-provider>
-    <!-- 整个页面使用 flex-column 布局 -->
-    <div class="chat-container">
-      <n-page-header title="墨鱼AI智能助手" class="p-4">
-        <template #avatar>
-          <n-avatar class="text-blue-500 bg-blue-100" round>AI</n-avatar>
-        </template>
-        <template #extra>
-          <n-space>
-            <n-select
-              v-model:value="selectedModel"
-              :options="options"
-              placeholder="请选择模型"
-              @update-value="handleUpdateModel"
-            />
+    <!-- 聊天容器使用flex布局，在PC端可以水平分为历史区和聊天区 -->
+    <div
+      class="chat-container"
+      :class="{ 'chat-container-with-history': showHistoryInSidebar }"
+    >
+      <!-- PC端历史记录侧边栏 -->
+      <div v-if="isDesktop && showHistoryInSidebar" class="history-sidebar">
+        <div class="history-header">
+          <h2>聊天历史</h2>
+          <n-button quaternary circle @click="toggleHistorySidebar">
+            <template #icon>
+              <n-icon>
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  width="24"
+                  height="24"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    fill="currentColor"
+                    d="m12 20l-8-8l8-8l1.425 1.4l-5.6 5.6H20v2H7.825l5.6 5.6z"
+                  />
+                </svg>
+              </n-icon>
+            </template>
+          </n-button>
+        </div>
 
-            <n-dropdown
-              trigger="click"
-              :options="userMenuOptions"
-              @select="handleSelect"
+        <div v-if="historyLoading" class="history-loading">
+          <n-spin size="medium" />
+          <p>加载历史记录中...</p>
+        </div>
+
+        <div v-else-if="historyTasks.length === 0" class="history-empty">
+          <n-empty description="暂无历史聊天记录" />
+        </div>
+
+        <div v-else class="history-list">
+          <div
+            v-for="task in historyTasks"
+            :key="task.taskId"
+            class="history-item"
+            :class="{ active: currentTaskId === task.taskId }"
+            @click="loadHistoryConversation(task.taskId)"
+          >
+            <div class="history-item-content">
+              <n-icon size="18" class="history-icon">
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  width="24"
+                  height="24"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    fill="currentColor"
+                    d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm0 14H5.2L4 17.2V4h16v12z"
+                  />
+                </svg>
+              </n-icon>
+              <div class="history-item-info">
+                <div class="history-time">{{ formatDate(task.startTime) }}</div>
+                <div class="history-activity">
+                  上次活动: {{ formatDate(task.lastActivity) }}
+                </div>
+              </div>
+            </div>
+            <n-button
+              quaternary
+              circle
+              size="small"
+              class="history-delete"
+              @click.stop="confirmDeleteHistory(task.taskId)"
             >
-              <n-avatar round size="small" class="cursor-pointer user-avatar">
-                {{ getAvatarText() }}
-              </n-avatar>
-            </n-dropdown>
-          </n-space>
-        </template>
-      </n-page-header>
-      <!-- 聊天记录区域 -->
-      <div class="messages">
-        <div
-          v-for="(msg, index) in conversationHistory"
-          :key="index"
-          class="message-row"
-          :class="msg.role === 'user' ? 'user' : 'assistant'"
-        >
-          <div class="message-bubble">
-            <!-- 用户消息 -->
-            <template v-if="msg.role === 'user'">
-              <div v-html="marked(msg.content)"></div>
-            </template>
-            <!-- AI 消息 -->
-            <template v-else>
-              <div v-if="msg.reasoning">
-                <em>思考过程：</em>
-                <div v-html="marked(msg.reasoning)"></div>
-              </div>
-              <div v-if="msg.content">
-                <em>结果：</em>
-                <div v-html="marked(msg.content)"></div>
-              </div>
-            </template>
+              <template #icon>
+                <n-icon>
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    width="24"
+                    height="24"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      fill="currentColor"
+                      d="M7 21q-.825 0-1.413-.588T5 19V6H4V4h5V3h6v1h5v2h-1v13q0 .825-.588 1.413T17 21H7Zm2-4h2V8H9v9Zm4 0h2V8h-2v9Z"
+                    />
+                  </svg>
+                </n-icon>
+              </template>
+            </n-button>
           </div>
         </div>
       </div>
 
-      <!-- 输入区域固定在底部 -->
-      <div class="input-area">
-        <n-input
-          round
-          v-model:value="content"
-          placeholder="请输入对话内容"
-          @keydown.enter="sendMessage"
-        />
-        <div class="btn-group">
-          <n-upload
-            ref="uploadRef"
-            :custom-request="customRequest"
-            :headers="{
-              'naive-info': 'hello!',
-            }"
-            :data="{
-              'naive-data': 'cool! naive!',
-            }"
-            :max="1"
-            @before-upload="beforeUpload"
-            @remove="handleRemove"
-            list-type="image-card"
+      <!-- 主要内容区域 -->
+      <div class="main-content">
+        <n-page-header title="墨鱼AI智能助手" class="p-4">
+          <template #avatar>
+            <n-avatar class="text-blue-500 bg-blue-100" round>AI</n-avatar>
+          </template>
+          <template #extra>
+            <n-space>
+              <!-- 移动端显示历史按钮 -->
+              <n-button
+                v-if="!isDesktop"
+                quaternary
+                circle
+                @click="showHistoryDrawer = true"
+              >
+                <template #icon>
+                  <n-icon>
+                    <svg
+                      xmlns="http://www.w3.org/2000/svg"
+                      width="24"
+                      height="24"
+                      viewBox="0 0 24 24"
+                    >
+                      <path
+                        fill="currentColor"
+                        d="M13 3a9 9 0 0 0-9 9H1l3.89 3.89l.07.14L9 12H6c0-3.87 3.13-7 7-7s7 3.13 7 7s-3.13 7-7 7c-1.93 0-3.68-.79-4.94-2.06l-1.42 1.42A8.954 8.954 0 0 0 13 21a9 9 0 0 0 0-18zm-1 5v5l4.28 2.54l.72-1.21l-3.5-2.08V8H12z"
+                      />
+                    </svg>
+                  </n-icon>
+                </template>
+              </n-button>
+
+              <!-- PC端显示历史切换按钮 -->
+              <n-button
+                v-if="isDesktop"
+                quaternary
+                circle
+                @click="toggleHistorySidebar"
+              >
+                <template #icon>
+                  <n-icon>
+                    <svg
+                      xmlns="http://www.w3.org/2000/svg"
+                      width="24"
+                      height="24"
+                      viewBox="0 0 24 24"
+                    >
+                      <path
+                        fill="currentColor"
+                        d="M13 3a9 9 0 0 0-9 9H1l3.89 3.89l.07.14L9 12H6c0-3.87 3.13-7 7-7s7 3.13 7 7s-3.13 7-7 7c-1.93 0-3.68-.79-4.94-2.06l-1.42 1.42A8.954 8.954 0 0 0 13 21a9 9 0 0 0 0-18zm-1 5v5l4.28 2.54l.72-1.21l-3.5-2.08V8H12z"
+                      />
+                    </svg>
+                  </n-icon>
+                </template>
+              </n-button>
+
+              <n-select
+                v-model:value="selectedModel"
+                :options="options"
+                placeholder="请选择模型"
+                @update-value="handleUpdateModel"
+              />
+
+              <n-dropdown
+                trigger="click"
+                :options="userMenuOptions"
+                @select="handleSelect"
+              >
+                <n-avatar round size="small" class="cursor-pointer user-avatar">
+                  {{ getAvatarText() }}
+                </n-avatar>
+              </n-dropdown>
+            </n-space>
+          </template>
+        </n-page-header>
+
+        <!-- 聊天记录区域 -->
+        <div class="messages">
+          <div
+            v-for="(msg, index) in conversationHistory"
+            :key="index"
+            class="message-row"
+            :class="msg.role === 'user' ? 'user' : 'assistant'"
           >
-            <n-button circle quaternary>
-              <n-icon size="36">
-                <AddCircle32Filled />
+            <div class="message-bubble">
+              <!-- 用户消息 -->
+              <template v-if="msg.role === 'user'">
+                <div v-html="marked(msg.content)"></div>
+              </template>
+              <!-- AI 消息 -->
+              <template v-else>
+                <div v-if="msg.reasoning">
+                  <em>思考过程：</em>
+                  <div v-html="marked(msg.reasoning)"></div>
+                </div>
+                <div v-if="msg.content">
+                  <em>结果：</em>
+                  <div v-html="marked(msg.content)"></div>
+                </div>
+              </template>
+            </div>
+          </div>
+        </div>
+
+        <!-- 输入区域固定在底部 -->
+        <div class="input-area">
+          <n-input
+            round
+            v-model:value="content"
+            placeholder="请输入对话内容"
+            @keydown.enter="sendMessage"
+          />
+          <div class="btn-group">
+            <n-upload
+              ref="uploadRef"
+              :custom-request="customRequest"
+              :headers="{
+                'naive-info': 'hello!',
+              }"
+              :data="{
+                'naive-data': 'cool! naive!',
+              }"
+              :max="1"
+              @before-upload="beforeUpload"
+              @remove="handleRemove"
+              list-type="image-card"
+            >
+              <n-button circle quaternary>
+                <n-icon size="36">
+                  <AddCircle32Filled />
+                </n-icon>
+              </n-button>
+            </n-upload>
+
+            <n-button
+              circle
+              @click="isGenerating ? stopGeneration() : sendMessage()"
+              type="primary"
+            >
+              <n-icon size="22">
+                <template v-if="isGenerating">
+                  <Stop24Filled />
+                </template>
+                <template v-else>
+                  <Send24Filled />
+                </template>
               </n-icon>
             </n-button>
-          </n-upload>
-
-          <n-button
-            circle
-            @click="isGenerating ? stopGeneration() : sendMessage()"
-            type="primary"
-          >
-            <n-icon size="22">
-              <template v-if="isGenerating">
-                <Stop24Filled />
-              </template>
-              <template v-else>
-                <Send24Filled />
-              </template>
-            </n-icon>
-          </n-button>
-          <n-button @click="clearConversation" quaternary circle>
-            <n-icon size="22">
-              <Delete16Filled />
-            </n-icon>
-          </n-button>
+            <n-button @click="clearConversation" quaternary circle>
+              <n-icon size="22">
+                <Delete16Filled />
+              </n-icon>
+            </n-button>
+          </div>
         </div>
       </div>
     </div>
+
+    <!-- 移动端历史记录抽屉 -->
+    <n-drawer v-model:show="showHistoryDrawer" placement="left" :width="280">
+      <n-drawer-content title="聊天历史">
+        <div v-if="historyLoading" class="history-loading">
+          <n-spin size="medium" />
+          <p>加载历史记录中...</p>
+        </div>
+
+        <div v-else-if="historyTasks.length === 0" class="history-empty">
+          <n-empty description="暂无历史聊天记录" />
+        </div>
+
+        <div v-else class="history-list">
+          <div
+            v-for="task in historyTasks"
+            :key="task.taskId"
+            class="history-item"
+            :class="{ active: currentTaskId === task.taskId }"
+            @click="
+              loadHistoryConversation(task.taskId);
+              showHistoryDrawer = false;
+            "
+          >
+            <div class="history-item-content">
+              <n-icon size="18" class="history-icon">
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  width="24"
+                  height="24"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    fill="currentColor"
+                    d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm0 14H5.2L4 17.2V4h16v12z"
+                  />
+                </svg>
+              </n-icon>
+              <div class="history-item-info">
+                <div class="history-time">{{ formatDate(task.startTime) }}</div>
+                <div class="history-activity">
+                  上次活动: {{ formatDate(task.lastActivity) }}
+                </div>
+              </div>
+            </div>
+            <n-button
+              quaternary
+              circle
+              size="small"
+              class="history-delete"
+              @click.stop="confirmDeleteHistory(task.taskId)"
+            >
+              <template #icon>
+                <n-icon>
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    width="24"
+                    height="24"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      fill="currentColor"
+                      d="M7 21q-.825 0-1.413-.588T5 19V6H4V4h5V3h6v1h5v2h-1v13q0 .825-.588 1.413T17 21H7Zm2-4h2V8H9v9Zm4 0h2V8h-2v9Z"
+                    />
+                  </svg>
+                </n-icon>
+              </template>
+            </n-button>
+          </div>
+        </div>
+      </n-drawer-content>
+    </n-drawer>
   </n-message-provider>
 </template>
 
 <script setup>
 import { ref, nextTick, onMounted, onUnmounted, computed } from "vue";
 import { marked } from "marked";
-import { useMessage } from "naive-ui";
+import { useMessage, useDialog } from "naive-ui";
 import { useRouter } from "vue-router";
 import {
   Send24Filled,
@@ -121,7 +336,7 @@ import {
   Delete16Filled,
   AddCircle32Filled,
 } from "@vicons/fluent";
-import { get, post, upload } from "@/utils/request";
+import { get, post, upload, del } from "@/utils/request";
 import hljs from "highlight.js";
 import "highlight.js/styles/github.css";
 
@@ -172,6 +387,7 @@ const conversationHistory = ref([]);
 // 3) 当前对话的 taskId
 const currentTaskId = ref(null);
 const message = useMessage();
+const dialog = useDialog();
 
 // 4) 是否正在生成回复
 const isGenerating = ref(false);
@@ -632,6 +848,12 @@ onMounted(() => {
       currentEvtSource.close();
     }
   });
+
+  // 加载历史聊天记录
+  fetchHistoryTasks();
+
+  // 添加窗口大小变化监听
+  window.addEventListener("resize", handleResize);
 });
 
 /**
@@ -671,6 +893,9 @@ onUnmounted(() => {
   if (currentEvtSource) {
     currentEvtSource.close();
   }
+
+  // 移除窗口大小变化监听
+  window.removeEventListener("resize", handleResize);
 });
 
 // 添加一个保活机制，定期向服务器发送请求
@@ -750,6 +975,41 @@ const handleSelect = (key) => {
  * 检查是否有从历史记录导入的对话
  */
 const checkImportedConversation = async () => {
+  // 首先检查后端是否有导入的对话
+  try {
+    const result = await get("/check-imported-conversation");
+
+    // 如果后端返回了导入的对话
+    if (result && result.hasImported && result.taskId) {
+      // 清空当前对话
+      conversationHistory.value = [];
+
+      // 设置taskId
+      currentTaskId.value = result.taskId;
+
+      // 将消息添加到对话历史
+      if (result.messages && result.messages.length > 0) {
+        result.messages.forEach((msg) => {
+          conversationHistory.value.push({
+            role: msg.role,
+            content: msg.content || "",
+            reasoning: msg.reasoning || "",
+          });
+        });
+
+        // 滚动到最新消息
+        scrollToBottom();
+
+        message.success("已成功导入历史对话");
+        return; // 成功从后端导入，不再处理本地存储的对话
+      }
+    }
+  } catch (error) {
+    console.error("检查后端导入对话失败:", error);
+    // 后端检查失败，继续尝试从本地存储导入
+  }
+
+  // 检查本地存储中是否有导入的对话
   const importedConversation = localStorage.getItem("importedConversation");
   const importedTaskId = localStorage.getItem("importedTaskId");
 
@@ -781,11 +1041,169 @@ const checkImportedConversation = async () => {
       scrollToBottom();
 
       message.success("已成功导入历史对话");
+
+      // 在历史记录列表中标记该对话为当前对话
+      if (historyTasks.value.length > 0) {
+        const activeTask = historyTasks.value.find(
+          (task) => task.taskId === importedTaskId
+        );
+        if (activeTask) {
+          // 已经存在于历史记录中，无需处理
+        } else {
+          // 需要刷新历史记录列表以显示该对话
+          fetchHistoryTasks();
+        }
+      }
     } catch (error) {
       console.error("导入对话失败:", error);
       message.error("导入对话失败");
     }
   }
+};
+
+// 屏幕尺寸检测
+const isDesktop = ref(window.innerWidth >= 768);
+// 历史聊天相关状态
+const showHistoryInSidebar = ref(
+  localStorage.getItem("showHistorySidebar") === "true"
+);
+const showHistoryDrawer = ref(false);
+const historyLoading = ref(false);
+const historyTasks = ref([]);
+
+// 格式化日期
+const formatDate = (dateString) => {
+  const date = new Date(dateString);
+  return date.toLocaleString("zh-CN", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+};
+
+// 切换侧边栏显示
+const toggleHistorySidebar = () => {
+  showHistoryInSidebar.value = !showHistoryInSidebar.value;
+  localStorage.setItem("showHistorySidebar", showHistoryInSidebar.value);
+};
+
+// 加载历史聊天记录
+const fetchHistoryTasks = async () => {
+  try {
+    historyLoading.value = true;
+
+    const result = await get("/history", {
+      userId: userId.value,
+      limit: 50, // 获取更多历史记录用于侧边栏显示
+      offset: 0,
+    });
+
+    historyTasks.value = result.tasks || [];
+  } catch (error) {
+    console.error("获取聊天历史失败:", error);
+    message.error("获取聊天历史失败");
+  } finally {
+    historyLoading.value = false;
+  }
+};
+
+// 加载历史对话详情
+const loadHistoryConversation = async (taskId) => {
+  if (taskId === currentTaskId.value) return; // 如果是当前对话则不重新加载
+
+  try {
+    // 如果正在生成，先停止生成
+    if (isGenerating.value) {
+      stopGeneration();
+    }
+
+    // 显示加载提示
+    message.loading("正在加载对话...");
+
+    // 获取对话详情
+    const result = await get(`/history/${taskId}`, {
+      userId: userId.value,
+    });
+
+    // 清空当前对话
+    conversationHistory.value = [];
+
+    // 设置taskId
+    currentTaskId.value = taskId;
+
+    // 解析导入的对话
+    const messages = result.messages || [];
+
+    // 将消息添加到对话历史
+    messages.forEach((msg) => {
+      conversationHistory.value.push({
+        role: msg.role,
+        content: msg.content || "",
+        reasoning: msg.reasoning || "",
+      });
+    });
+
+    // 同时将对话导入到服务器
+    try {
+      await post("/import-messages", {
+        taskId: taskId,
+        messages: messages,
+        userId: userId.value,
+      });
+      console.log("对话已成功导入到服务器");
+    } catch (importError) {
+      console.error("导入对话到服务器失败:", importError);
+      // 导入失败不影响界面展示，所以只记录错误不显示给用户
+    }
+
+    // 滚动到最新消息
+    scrollToBottom();
+
+    message.success("已加载历史对话");
+  } catch (error) {
+    console.error("加载历史对话失败:", error);
+    message.error("加载历史对话失败");
+  }
+};
+
+// 确认删除历史记录
+const confirmDeleteHistory = (taskId) => {
+  dialog.warning({
+    title: "删除对话",
+    content: "确定要删除这个对话吗？此操作不可恢复。",
+    positiveText: "确定",
+    negativeText: "取消",
+    onPositiveClick: () => deleteHistoryTask(taskId),
+  });
+};
+
+// 删除历史记录
+const deleteHistoryTask = async (taskId) => {
+  try {
+    await del(`/history/${taskId}`, {
+      userId: userId.value,
+    });
+
+    message.success("对话已删除");
+
+    // 如果删除的是当前对话，则清空当前对话
+    if (taskId === currentTaskId.value) {
+      clearConversation();
+    }
+
+    // 刷新历史记录列表
+    fetchHistoryTasks();
+  } catch (error) {
+    console.error("删除对话失败:", error);
+    message.error("删除对话失败");
+  }
+};
+
+// 窗口大小变化处理
+const handleResize = () => {
+  isDesktop.value = window.innerWidth >= 768;
 };
 </script>
 
@@ -797,6 +1215,117 @@ const checkImportedConversation = async () => {
   height: 100vh;
   overflow: hidden;
   background-color: var(--n-color-background);
+}
+
+/* 带有历史侧边栏的容器 */
+.chat-container-with-history {
+  flex-direction: row;
+}
+
+/* 历史侧边栏 */
+.history-sidebar {
+  width: 280px;
+  border-right: 1px solid #eee;
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  background-color: var(--n-color-card);
+}
+
+.history-header {
+  padding: 16px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-bottom: 1px solid #eee;
+}
+
+.history-header h2 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.history-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 8px;
+}
+
+.history-loading,
+.history-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 40px 0;
+  color: #666;
+}
+
+.history-item {
+  padding: 12px;
+  border-radius: 8px;
+  margin-bottom: 8px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background-color: var(--n-color-modal);
+  position: relative;
+}
+
+.history-item:hover {
+  background-color: rgba(0, 0, 0, 0.03);
+}
+
+.history-item.active {
+  background-color: rgba(24, 144, 255, 0.1);
+}
+
+.history-item-content {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  flex: 1;
+}
+
+.history-icon {
+  margin-top: 3px;
+}
+
+.history-item-info {
+  flex: 1;
+  overflow: hidden;
+}
+
+.history-time {
+  font-weight: 500;
+  margin-bottom: 4px;
+}
+
+.history-activity {
+  font-size: 12px;
+  color: #666;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.history-delete {
+  opacity: 0.6;
+}
+
+.history-delete:hover {
+  opacity: 1;
+}
+
+/* 主内容区域 */
+.main-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  overflow: hidden;
 }
 
 /* 聊天记录区域自动占满上方剩余空间，并支持滚动 */
@@ -952,10 +1481,18 @@ const checkImportedConversation = async () => {
   background-color: #f0fff4;
 }
 
-/* 响应式：手机端可以根据需要微调 */
+/* 响应式：手机端样式调整 */
 @media (max-width: 768px) {
   .message-bubble {
     max-width: 85%;
+  }
+
+  .chat-container {
+    flex-direction: column;
+  }
+
+  .history-sidebar {
+    display: none; /* 移动端隐藏侧边栏 */
   }
 }
 
