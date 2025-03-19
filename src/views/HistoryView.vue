@@ -141,7 +141,8 @@
       </div>
 
       <template #footer>
-        <div class="flex justify-end">
+        <div class="flex justify-between w-full">
+          <n-button type="primary" @click="addToChat"> 添加到对话 </n-button>
           <n-button @click="showDetail = false">关闭</n-button>
         </div>
       </template>
@@ -153,7 +154,7 @@
 import { ref, onMounted } from "vue";
 import { useRouter } from "vue-router";
 import { useMessage, useDialog } from "naive-ui";
-import { get, del } from "@/utils/request";
+import { get, del, post } from "@/utils/request";
 import { marked } from "marked";
 
 const router = useRouter();
@@ -289,6 +290,40 @@ const deleteTask = async (taskId) => {
   } catch (error) {
     console.error("删除对话失败:", error);
     message.error("删除对话失败");
+  }
+};
+
+// 添加对话到聊天页面
+const addToChat = async () => {
+  try {
+    // 显示加载提示
+    message.loading("正在导入对话...");
+
+    // 将当前对话存储到localStorage，供聊天页面使用（备用方案）
+    localStorage.setItem(
+      "importedConversation",
+      JSON.stringify(conversation.value)
+    );
+    localStorage.setItem("importedTaskId", currentTaskId.value);
+
+    // 向后端发送导入请求
+    await post("/import-messages", {
+      taskId: currentTaskId.value,
+      messages: conversation.value,
+      userId: userId.value,
+    });
+
+    // 关闭详情弹窗
+    showDetail.value = false;
+
+    // 跳转到聊天页面
+    message.success("对话已导入，正在跳转...");
+    setTimeout(() => {
+      router.push("/chat");
+    }, 500);
+  } catch (error) {
+    console.error("添加对话失败:", error);
+    message.error("添加对话失败，请重试");
   }
 };
 

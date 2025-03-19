@@ -602,6 +602,10 @@ onMounted(() => {
   }
 
   localStorage.setItem("userId", userId.value);
+
+  // 检查是否有导入的历史对话
+  checkImportedConversation();
+
   const messagesContainer = document.querySelector(".messages");
   if (messagesContainer) {
     messagesContainer.addEventListener("scroll", () => {
@@ -739,6 +743,48 @@ const handleSelect = (key) => {
       // 跳转到登录页
       router.push("/login");
       break;
+  }
+};
+
+/**
+ * 检查是否有从历史记录导入的对话
+ */
+const checkImportedConversation = async () => {
+  const importedConversation = localStorage.getItem("importedConversation");
+  const importedTaskId = localStorage.getItem("importedTaskId");
+
+  if (importedConversation && importedTaskId) {
+    try {
+      // 清空当前对话
+      conversationHistory.value = [];
+
+      // 解析导入的对话
+      const messages = JSON.parse(importedConversation);
+
+      // 设置taskId
+      currentTaskId.value = importedTaskId;
+
+      // 将消息添加到对话历史
+      messages.forEach((msg) => {
+        conversationHistory.value.push({
+          role: msg.role,
+          content: msg.content || "",
+          reasoning: msg.reasoning || "",
+        });
+      });
+
+      // 清除导入的会话数据，防止重复导入
+      localStorage.removeItem("importedConversation");
+      localStorage.removeItem("importedTaskId");
+
+      // 滚动到最新消息
+      scrollToBottom();
+
+      message.success("已成功导入历史对话");
+    } catch (error) {
+      console.error("导入对话失败:", error);
+      message.error("导入对话失败");
+    }
   }
 };
 </script>
