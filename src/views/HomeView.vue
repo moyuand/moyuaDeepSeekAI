@@ -96,9 +96,9 @@
       <!-- 主要内容区域 -->
       <div class="main-content">
         <n-page-header title="墨鱼AI智能助手" class="p-4">
-          <template #avatar>
+          <!-- <template #avatar>
             <n-avatar class="text-blue-500 bg-blue-100" round>AI</n-avatar>
-          </template>
+          </template> -->
           <template #extra>
             <n-space>
               <!-- 移动端显示历史按钮 -->
