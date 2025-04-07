@@ -391,8 +391,9 @@ const dialog = useDialog();
 
 // 4) 是否正在生成回复
 const isGenerating = ref(false);
-// 5) 当前的EventSource实例
+// 定义在组件级别，可被多个函数共享
 let currentEvtSource = null;
+let isNormalClosure = false;
 
 const options = ref([
   {
@@ -519,10 +520,6 @@ const customRequest = async (data) => {
  */
 const stopGeneration = () => {
   if (currentEvtSource) {
-    currentEvtSource.close();
-    currentEvtSource = null;
-    isGenerating.value = false;
-
     // 在当前消息中添加提示
     const currentIndex = conversationHistory.value.length - 1;
     if (
@@ -532,6 +529,19 @@ const stopGeneration = () => {
       conversationHistory.value[currentIndex].content +=
         "\n\n*[用户已停止生成]*";
     }
+
+    // 标记为正常关闭
+    isNormalClosure = true;
+
+    // 关闭连接
+    try {
+      currentEvtSource.close();
+    } catch (e) {
+      console.error("关闭EventSource时发生错误:", e);
+    }
+
+    currentEvtSource = null;
+    isGenerating.value = false;
 
     message.info("已停止生成回复");
   }
@@ -652,8 +662,8 @@ const doSSE = (taskId) => {
   // 设置生成状态为true
   isGenerating.value = true;
 
-  // 添加标记，用于跟踪连接是否正常关闭
-  let isNormalClosure = false;
+  // 重置标记，用于跟踪连接是否正常关闭
+  isNormalClosure = false;
 
   // 创建并保存EventSource实例
   // 使用配置的API代理访问后端
@@ -672,40 +682,73 @@ const doSSE = (taskId) => {
   // 添加超时保护，防止长时间无响应
   const connectionTimeout = setTimeout(() => {
     console.log("EventSource连接超时，自动关闭");
-    message.warning("AI响应超时，请重试");
+    message.warning("AI响应超时（2分钟），请重试");
     closeEventSource();
 
     // 添加超时提示到消息中
     if (conversationHistory.value[currentIndex]) {
       conversationHistory.value[currentIndex].content +=
-        "\n\n**[系统提示]** 响应超时，请重试";
+        "\n\n**[系统提示]** 响应超时（2分钟），请重试";
     }
-  }, 60000); // 60秒超时
+  }, 120000); // 120秒超时
 
   // 添加统一的关闭EventSource函数
   const closeEventSource = () => {
-    if (currentEvtSource) {
-      console.log("关闭EventSource连接");
-      isNormalClosure = true; // 标记连接已正常关闭
+    // 防止重复关闭
+    if (!currentEvtSource) {
+      console.log("EventSource已经为null，无需关闭");
+      return;
+    }
+
+    console.log(
+      "正在关闭EventSource连接，当前状态:",
+      currentEvtSource.readyState === 0
+        ? "CONNECTING"
+        : currentEvtSource.readyState === 1
+          ? "OPEN"
+          : currentEvtSource.readyState === 2
+            ? "CLOSED"
+            : "UNKNOWN"
+    );
+
+    // 先设置标记，即使在关闭过程中出错也能被识别为正常关闭
+    isNormalClosure = true;
+
+    try {
+      // 在关闭前移除事件处理器，避免关闭过程中触发事件
+      currentEvtSource.onmessage = null;
+      currentEvtSource.onerror = null;
       currentEvtSource.close();
+      console.log("EventSource连接已关闭");
+    } catch (e) {
+      console.error("关闭EventSource时发生错误:", e);
+    } finally {
+      // 确保资源被释放
       currentEvtSource = null;
       isGenerating.value = false;
-
       // 清除超时定时器
       clearTimeout(connectionTimeout);
     }
   };
 
   currentEvtSource.onmessage = (e) => {
-    // 处理完成信号 - 增加对status: completed的判断
+    // 处理完成信号 - 增加对[done]的判断
     if (
       e.data === "[DONE]" ||
       e.data.includes('"status": "completed"') ||
-      e.data.includes('"status":"completed"')
+      e.data.includes('"status":"completed"') ||
+      e.data.startsWith("[done]")
     ) {
+      console.log("接收到完成信号:", e.data);
       isNormalClosure = true; // 立即标记为正常关闭，防止后续触发onerror
-      closeEventSource();
-      scrollToBottom();
+
+      // 添加一个小延迟再关闭连接，避免浏览器出现竞态条件
+      setTimeout(() => {
+        closeEventSource();
+        scrollToBottom();
+      }, 100);
+
+      return; // 确保完成后不再处理其他情况
     } else if (e.data.startsWith("[reasoning]")) {
       const chunk = e.data.replace("[reasoning]", "");
       // 解码URL编码的内容
@@ -733,8 +776,10 @@ const doSSE = (taskId) => {
       try {
         const data = JSON.parse(e.data);
         if (data.status === "completed") {
+          isNormalClosure = true; // 确保标记为正常关闭
           closeEventSource();
           scrollToBottom();
+          return; // 确保完成后不再处理其他情况
         } else if (data.error) {
           message.error(data.error || "AI响应出错");
           conversationHistory.value[currentIndex].content +=
@@ -754,29 +799,38 @@ const doSSE = (taskId) => {
   };
 
   currentEvtSource.onerror = (err) => {
-    // 在检查连接已关闭或正在关闭时不显示错误
-    if (
-      currentEvtSource &&
-      (currentEvtSource.readyState === 2 || isNormalClosure)
-    ) {
-      console.log("EventSource已关闭或正在关闭，忽略错误");
+    console.log("EventSource onerror触发，当前状态:", {
+      isNormalClosure,
+      readyState: currentEvtSource ? currentEvtSource.readyState : "null",
+      error: err,
+    });
+
+    // 检查连接是否已标记为正常关闭或状态码为关闭
+    if (isNormalClosure) {
+      console.log("EventSource已标记为正常关闭，忽略错误");
+      closeEventSource(); // 确保连接被关闭
       return;
     }
 
-    console.error("EventSource 错误:", err);
-
-    // 只有在非正常关闭的情况下才显示错误
-    if (!isNormalClosure) {
-      message.error("连接错误，请刷新页面重试");
-
-      // 在消息中显示错误提示
-      if (conversationHistory.value[currentIndex]) {
-        conversationHistory.value[currentIndex].content +=
-          "\n\n**[系统错误]** 连接中断，请刷新页面重试";
-      }
-
+    // 检查连接是否已经关闭或正在关闭
+    if (currentEvtSource && currentEvtSource.readyState === 2) {
+      console.log("EventSource已经处于关闭状态，忽略错误");
       closeEventSource();
+      return;
     }
+
+    console.error("EventSource 真正的错误:", err);
+
+    // 处理真正的错误情况
+    message.error("连接错误，请刷新页面重试");
+
+    // 在消息中显示错误提示
+    if (conversationHistory.value[currentIndex]) {
+      conversationHistory.value[currentIndex].content +=
+        "\n\n**[系统错误]** 连接中断，请刷新页面重试";
+    }
+
+    closeEventSource();
   };
 
   // 在组件卸载时确保清理连接

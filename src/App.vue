@@ -17,6 +17,10 @@ const osThemeRef = useOsTheme();
 const themeMode = ref(localStorage.getItem("themeMode") || "light"); // 'light', 'dark', 'system'
 const theme = ref(null);
 
+// 添加登录状态管理
+const isLoggedIn = ref(!!localStorage.getItem("apiKey"));
+const loginError = ref("");
+
 // 监听主题变化
 const updateTheme = () => {
   if (themeMode.value === "system") {
@@ -37,6 +41,14 @@ provide("changeTheme", (mode) => {
   updateTheme();
 });
 
+// 提供登录状态给子组件
+provide("isLoggedIn", isLoggedIn);
+provide("loginError", loginError);
+provide("setLoginStatus", (status, error = "") => {
+  isLoggedIn.value = status;
+  loginError.value = error;
+});
+
 // 全局登录检查函数
 const checkLoginStatus = async () => {
   // 如果当前已在登录页面，无需检查
@@ -45,10 +57,15 @@ const checkLoginStatus = async () => {
   const userId = localStorage.getItem("userId");
   const apiKey = localStorage.getItem("apiKey");
 
-  // 如果本地没有登录信息，直接跳转登录页
+  // 如果本地没有登录信息，设置登录状态为false
   if (!userId || !apiKey) {
     clearUserData();
-    router.push("/login");
+    isLoggedIn.value = false;
+
+    // 如果不在登录页，则导航到登录页
+    if (router.currentRoute.value.name !== "login") {
+      router.push("/login");
+    }
     return;
   }
 
@@ -56,10 +73,18 @@ const checkLoginStatus = async () => {
     // 验证API密钥有效性 (这里可以根据实际接口调整)
     const result = await get(`/verify-api-key?apiKey=${apiKey}`);
 
+    // 更新登录状态
+    isLoggedIn.value = result.valid;
+
     // 如果验证失败
     if (!result.valid) {
       clearUserData();
-      router.push("/login");
+      loginError.value = "您的登录已过期，请重新登录";
+
+      // 如果不在登录页，则导航到登录页
+      if (router.currentRoute.value.name !== "login") {
+        router.push("/login");
+      }
     }
   } catch (error) {
     console.error("验证用户登录状态失败:", error);
@@ -72,6 +97,7 @@ const clearUserData = () => {
   localStorage.removeItem("userId");
   localStorage.removeItem("username");
   localStorage.removeItem("apiKey");
+  isLoggedIn.value = false;
 };
 
 // 页面加载时检查登录状态
@@ -89,6 +115,7 @@ onMounted(() => {
       const currentRoute = router.currentRoute.value;
       if (currentRoute.name !== "login") {
         clearUserData();
+        loginError.value = "您的登录已过期，请重新登录";
         router.push("/login");
       }
     }

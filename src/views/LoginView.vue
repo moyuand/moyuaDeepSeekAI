@@ -87,11 +87,17 @@
         </n-tabs>
       </n-card>
     </div>
+
+    <footer class="icp-footer">
+      <a href="https://beian.miit.gov.cn/" target="_blank" rel="noopener"
+        >晋ICP备2022010224号-2</a
+      >
+    </footer>
   </div>
 </template>
 
 <script setup>
-import { ref } from "vue";
+import { ref, inject, onMounted, watch } from "vue";
 import { useRouter } from "vue-router";
 import { useMessage } from "naive-ui";
 import { post } from "@/utils/request";
@@ -99,6 +105,20 @@ import { post } from "@/utils/request";
 const router = useRouter();
 const message = useMessage();
 const loading = ref(false);
+
+// 注入登录状态
+const isLoggedIn = inject("isLoggedIn");
+const loginError = inject("loginError");
+const setLoginStatus = inject("setLoginStatus");
+
+// 显示登录错误消息
+watch(loginError, (newError) => {
+  if (newError) {
+    message.error(newError);
+    // 清除错误消息，避免重复显示
+    setLoginStatus(isLoggedIn.value, "");
+  }
+});
 
 const loginForm = ref({
   username: "",
@@ -127,11 +147,15 @@ const handleLogin = async () => {
     localStorage.setItem("username", result.username);
     localStorage.setItem("apiKey", result.api_key);
 
+    // 更新登录状态
+    setLoginStatus(true);
+
     message.success("登录成功");
     router.push("/chat");
   } catch (error) {
     console.error("登录失败:", error);
     message.error(error.message || "登录失败，请检查用户名和密码");
+    setLoginStatus(false, error.message || "登录失败，请检查用户名和密码");
   } finally {
     loading.value = false;
   }
@@ -157,11 +181,15 @@ const handleRegister = async () => {
     localStorage.setItem("username", result.username);
     localStorage.setItem("apiKey", result.api_key);
 
+    // 更新登录状态
+    setLoginStatus(true);
+
     message.success("注册成功");
     router.push("/chat");
   } catch (error) {
     console.error("注册失败:", error);
     message.error(error.message || "注册失败，请稍后再试");
+    setLoginStatus(false, error.message || "注册失败，请稍后再试");
   } finally {
     loading.value = false;
   }
@@ -170,6 +198,13 @@ const handleRegister = async () => {
 const goToRegister = () => {
   activeTab.value = "register";
 };
+
+// 当已登录时自动跳转到聊天页面
+onMounted(() => {
+  if (isLoggedIn.value) {
+    router.push("/chat");
+  }
+});
 </script>
 
 <style scoped>
@@ -207,5 +242,25 @@ const goToRegister = () => {
 .login-card {
   border-radius: 12px;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+.icp-footer {
+  position: absolute;
+  bottom: 10px;
+  left: 0;
+  width: 100%;
+  text-align: center;
+  padding: 10px 0;
+  font-size: 12px;
+  color: #666;
+}
+
+.icp-footer a {
+  color: #666;
+  text-decoration: none;
+}
+
+.icp-footer a:hover {
+  color: #003153;
 }
 </style>
