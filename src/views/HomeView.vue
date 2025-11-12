@@ -64,11 +64,10 @@
 					v-model="content"
 					:is-generating="isGenerating"
 					:disabled="!userStore.isLoggedIn"
+					:enable-upload="false"
 					@send="sendMessage"
 					@stop="stopGeneration"
 					@clear="clearConversation"
-					@upload="handleUpload"
-					@remove-upload="handleRemoveUpload"
 				/>
 			</div>
 		</div>
@@ -116,7 +115,6 @@ const selectedModel = ref('deepseek-r1');
 const conversationHistory = ref([]);
 const currentTaskId = ref(null);
 const isGenerating = ref(false);
-const hasUploadedFile = ref(false);
 
 // SSE相关
 let currentEvtSource = null;
@@ -158,7 +156,6 @@ const sendMessage = async () => {
 			const result = await post('/start', {
 				content: content.value,
 				userId: userStore.userId,
-				imageData: hasUploadedFile.value,
 			});
 			taskId = result.taskId;
 			currentTaskId.value = taskId;
@@ -167,12 +164,10 @@ const sendMessage = async () => {
 			await post('/continue', {
 				taskId,
 				content: content.value,
-				imageData: hasUploadedFile.value,
 			});
 		}
 
 		content.value = '';
-		hasUploadedFile.value = false;
 		doSSE(taskId);
 	} catch (error) {
 		console.error('发送消息失败:', error);
@@ -278,34 +273,6 @@ const clearConversation = () => {
 			message.success('已清空对话');
 		},
 	});
-};
-
-// 图片上传
-const handleUpload = async ({ file, onFinish, onError }) => {
-	try {
-		const formData = new FormData();
-		formData.append('file', file);
-		const result = await post('/upload', formData);
-		if (result.code === 0) {
-			content.value = result.data.url;
-			hasUploadedFile.value = true;
-			message.success('上传成功');
-			onFinish();
-		} else {
-			onError();
-			message.error(result.message || '上传失败');
-		}
-	} catch (error) {
-		console.error('上传失败:', error);
-		onError();
-		message.error('上传失败');
-	}
-};
-
-// 移除上传
-const handleRemoveUpload = () => {
-	hasUploadedFile.value = false;
-	content.value = '';
 };
 
 // 加载历史记录
