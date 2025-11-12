@@ -15,12 +15,15 @@ const service = axios.create({
 service.interceptors.request.use(
   (config) => {
     // 在这里可以添加请求头等配置
+    const apiKey = localStorage.getItem("apiKey");
+
     config.headers = {
       ...config.headers,
       "Access-Control-Allow-Origin": "*",
       "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
       "Access-Control-Allow-Headers":
         "Origin, Content-Type, Accept, Authorization, X-Request-With",
+      ...(apiKey ? { "X-API-Key": apiKey } : {}),
     };
     return config;
   },

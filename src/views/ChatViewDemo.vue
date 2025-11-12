@@ -4,9 +4,6 @@
 		<ChatHeader
 			:is-desktop="isDesktop"
 			:is-dark="themeStore.isDark"
-			:current-model="selectedModel"
-			:model-options="modelOptions"
-			@update:current-model="selectedModel = $event"
 			@toggle-history="showHistorySidebar = !showHistorySidebar"
 			@toggle-theme="themeStore.toggleTheme()"
 			@go-settings="router.push('/settings')"
@@ -75,16 +72,8 @@
 
 	// 状态
 	const inputContent = ref('');
-	const selectedModel = ref('deepseek-r1');
 	const showHistorySidebar = ref(true);
 	const messageListRef = ref(null);
-
-	// 模型选项
-	const modelOptions = [
-		{ label: 'DeepSeek R1', value: 'deepseek-r1' },
-		{ label: 'DeepSeek Chat', value: 'deepseek-chat' },
-		{ label: 'GPT-4', value: 'gpt-4' },
-	];
 
 	// 历史记录（演示数据）
 	const historyList = ref([]);

@@ -1,3 +1,76 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+:root {
+	--n-color-body: #f5f6fb;
+	--n-color-card: #ffffff;
+	--n-border-color: #e5e7eb;
+	--n-color-hover: rgba(15, 23, 42, 0.04);
+	--n-color-pressed: rgba(15, 23, 42, 0.08);
+	--n-text-color: #111827;
+	--n-text-color-disabled: #94a3b8;
+	--n-scrollbar-color: rgba(15, 23, 42, 0.2);
+	--n-scrollbar-color-hover: rgba(15, 23, 42, 0.35);
+	--chat-shadow: rgba(15, 23, 42, 0.08);
+	color-scheme: light;
+}
+
+:root[data-theme="dark"] {
+	--n-color-body: #0f1115;
+	--n-color-card: #161b22;
+	--n-border-color: rgba(255, 255, 255, 0.08);
+	--n-color-hover: rgba(255, 255, 255, 0.08);
+	--n-color-pressed: rgba(255, 255, 255, 0.16);
+	--n-text-color: rgba(255, 255, 255, 0.92);
+	--n-text-color-disabled: rgba(255, 255, 255, 0.45);
+	--n-scrollbar-color: rgba(255, 255, 255, 0.25);
+	--n-scrollbar-color-hover: rgba(255, 255, 255, 0.45);
+	--chat-shadow: rgba(0, 0, 0, 0.55);
+	color-scheme: dark;
+}
+
+body {
+	min-height: 100vh;
+	background: var(--n-color-body);
+	color: var(--n-text-color);
+	font-family:
+		Inter,
+		-apple-system,
+		BlinkMacSystemFont,
+		"Segoe UI",
+		Roboto,
+		"Oxygen",
+		"Ubuntu",
+		"Cantarell",
+		"Fira Sans",
+		"Droid Sans",
+		"Helvetica Neue",
+		sans-serif;
+	line-height: 1.6;
+	transition:
+		color 0.3s ease,
+		background-color 0.3s ease;
+}
+
+#app {
+	min-height: 100vh;
+	background: var(--n-color-body);
+}
+
+::-webkit-scrollbar {
+	width: 8px;
+}
+
+::-webkit-scrollbar-track {
+	background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+	background: var(--n-scrollbar-color);
+	border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+	background: var(--n-scrollbar-color-hover);
+}

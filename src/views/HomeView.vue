@@ -1,11 +1,8 @@
 <template>
-	<div class="home-view">
+	<div class="home-view" :class="{ 'dark-theme': themeStore.isDark }">
 		<ChatHeader
 			:is-desktop="isDesktop"
 			:is-dark="themeStore.isDark"
-			:current-model="selectedModel"
-			:model-options="modelOptions"
-			@update:current-model="selectedModel = $event"
 			@toggle-history="showHistorySidebar = !showHistorySidebar"
 			@toggle-theme="handleToggleTheme"
 			@go-settings="handleGoSettings"
@@ -111,7 +108,6 @@ const messagesContainer = ref(null);
 
 // 对话状态
 const content = ref('');
-const selectedModel = ref('deepseek-r1');
 const conversationHistory = ref([]);
 const currentTaskId = ref(null);
 const isGenerating = ref(false);
@@ -124,11 +120,14 @@ let isNormalClosure = false;
 const historyTasks = ref([]);
 const historyLoading = ref(false);
 
-// 模型选项
-const modelOptions = [
-	{ label: 'DeepSeek R1', value: 'deepseek-r1' },
-	{ label: 'DeepSeek Chat', value: 'deepseek-chat' },
-];
+const formatHistoryTasks = (data) => {
+	const tasksArray = Array.isArray(data) ? data : data?.tasks || [];
+	return tasksArray.map(task => ({
+		id: task.taskId || task.id,
+		title: task.firstMessage || task.title || '未命名对话',
+		timestamp: task.startTime || task.lastActivity || task.updatedAt,
+	}));
+};
 
 // 滚动到底部
 const scrollToBottom = () => {
@@ -176,12 +175,47 @@ const sendMessage = async () => {
 };
 
 // SSE连接
+const ensureAssistantMessage = () => {
+	const lastMsg = conversationHistory.value[conversationHistory.value.length - 1];
+	if (!lastMsg || lastMsg.role !== 'assistant') {
+		conversationHistory.value.push({
+			role: 'assistant',
+			reasoning: '',
+			content: '',
+			isGenerating: true,
+		});
+		return conversationHistory.value[conversationHistory.value.length - 1];
+	}
+	return lastMsg;
+};
+
+const decodeChunk = (chunk = '') => {
+	try {
+		return decodeURIComponent(chunk);
+	} catch {
+		return chunk;
+	}
+};
+
+const appendReasoning = (text = '') => {
+	const msg = ensureAssistantMessage();
+	msg.reasoning = (msg.reasoning || '') + text;
+	scrollToBottom();
+};
+
+const appendContent = (text = '') => {
+	const msg = ensureAssistantMessage();
+	msg.content = (msg.content || '') + text;
+	scrollToBottom();
+};
+
 const doSSE = (taskId) => {
 	isGenerating.value = true;
 	isNormalClosure = false;
 
-	const url = `/api/chat?taskId=${taskId}&userId=${userStore.userId}`;
+	const url = `/api/events?taskId=${taskId}&userId=${userStore.userId}`;
 	currentEvtSource = new EventSource(url);
+	let hasCompleted = false;
 
 	let timeoutId = setTimeout(() => {
 		console.log('EventSource连接超时');
@@ -200,40 +234,97 @@ const doSSE = (taskId) => {
 		}
 	};
 
-	currentEvtSource.addEventListener('reasoning', (e) => {
-		const data = JSON.parse(e.data);
-		const lastMsg = conversationHistory.value[conversationHistory.value.length - 1];
-		if (!lastMsg || lastMsg.role !== 'assistant') {
-			conversationHistory.value.push({
-				role: 'assistant',
-				reasoning: data.reasoning || '',
-				content: '',
-				isGenerating: true,
-			});
-		} else {
-			lastMsg.reasoning = (lastMsg.reasoning || '') + (data.reasoning || '');
-		}
-		scrollToBottom();
-	});
-
-	currentEvtSource.addEventListener('content', (e) => {
-		const data = JSON.parse(e.data);
-		const lastMsg = conversationHistory.value[conversationHistory.value.length - 1];
-		if (lastMsg && lastMsg.role === 'assistant') {
-			lastMsg.content += data.content || '';
-		}
-		scrollToBottom();
-	});
-
-	currentEvtSource.addEventListener('done', () => {
+	const markResponseFinished = (showToast = true) => {
+		if (hasCompleted) return;
+		hasCompleted = true;
 		isNormalClosure = true;
 		const lastMsg = conversationHistory.value[conversationHistory.value.length - 1];
 		if (lastMsg) {
 			lastMsg.isGenerating = false;
 		}
 		closeEventSource();
-		message.success('回复完成');
+		if (showToast) {
+			message.success('回复完成');
+		}
+	};
+
+	const handleLegacyPayload = (rawData = '') => {
+		if (!rawData) return;
+
+		const trimmed = rawData.trim();
+		const normalized = trimmed.toLowerCase();
+		const isPlainDone = normalized === '[done]';
+		const isPrefixedDone = normalized.startsWith('[done]');
+		const isStatusCompleted =
+			rawData.includes('"status":"completed"') || rawData.includes('"status": "completed"');
+
+		if (rawData === '[DONE]' || isPlainDone || isPrefixedDone || isStatusCompleted) {
+			markResponseFinished(true);
+			return;
+		}
+
+		if (rawData.startsWith('[reasoning]')) {
+			appendReasoning(decodeChunk(rawData.replace('[reasoning]', '')));
+			return;
+		}
+
+		if (rawData.startsWith('[result]')) {
+			appendContent(decodeChunk(rawData.replace('[result]', '')));
+			return;
+		}
+
+		if (rawData.startsWith('[error]')) {
+			const errorMsg = decodeChunk(rawData.replace('[error]', '')) || 'AI响应出错';
+			appendContent(`\n\n**[错误]** ${errorMsg}`);
+			message.error(errorMsg);
+			markResponseFinished(false);
+			return;
+		}
+
+		// Try JSON fallback if backend returns structured message without explicit event name
+		try {
+			const data = JSON.parse(rawData);
+			if (data?.type === 'reasoning' || data?.reasoning) {
+				appendReasoning(data.reasoning || data.chunk || '');
+			} else if (data?.type === 'content' || data?.content) {
+				appendContent(data.content || data.chunk || '');
+			} else if (data?.status === 'completed') {
+				markResponseFinished(true);
+			} else if (data?.error) {
+				appendContent(`\n\n**[错误]** ${data.error}`);
+				message.error(data.error);
+				markResponseFinished(false);
+			}
+		} catch {
+			// Ignore parsing errors for unknown payloads
+		}
+	};
+
+	currentEvtSource.addEventListener('reasoning', (e) => {
+		try {
+			const data = JSON.parse(e.data);
+			appendReasoning(data.reasoning || data.chunk || '');
+		} catch {
+			appendReasoning(e.data || '');
+		}
 	});
+
+	currentEvtSource.addEventListener('content', (e) => {
+		try {
+			const data = JSON.parse(e.data);
+			appendContent(data.content || data.chunk || '');
+		} catch {
+			appendContent(e.data || '');
+		}
+	});
+
+	currentEvtSource.addEventListener('done', () => {
+		markResponseFinished(true);
+	});
+
+	currentEvtSource.onmessage = (e) => {
+		handleLegacyPayload(e?.data);
+	};
 
 	currentEvtSource.onerror = (e) => {
 		if (!isNormalClosure) {
@@ -276,20 +367,16 @@ const clearConversation = () => {
 };
 
 // 加载历史记录
-const loadHistory = async () => {
-	historyLoading.value = true;
-	try {
-		const result = await get(`/history?userId=${userStore.userId}`);
-		historyTasks.value = result.map(task => ({
-			id: task.taskId,
-			title: task.firstMessage || '未命名对话',
-			timestamp: task.startTime,
-		}));
-	} catch (error) {
-		console.error('加载历史失败:', error);
-	} finally {
-		historyLoading.value = false;
-	}
+	const loadHistory = async () => {
+		historyLoading.value = true;
+		try {
+			const result = await get(`/history?userId=${userStore.userId}`);
+			historyTasks.value = formatHistoryTasks(result);
+		} catch (error) {
+			console.error('加载历史失败:', error);
+		} finally {
+			historyLoading.value = false;
+		}
 };
 
 // 加载历史对话

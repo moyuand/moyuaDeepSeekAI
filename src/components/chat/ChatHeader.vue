@@ -30,16 +30,6 @@
 		</div>
 
 		<div class="header-right">
-			<!-- 模型选择器 -->
-			<n-select
-				v-if="showModelSelector"
-				v-model:value="selectedModel"
-				:options="modelOptions"
-				:consistent-menu-width="false"
-				style="width: 180px"
-				size="small"
-			/>
-
 			<!-- 主题切换 -->
 			<n-button quaternary circle @click="$emit('toggle-theme')">
 				<template #icon>
@@ -114,10 +104,9 @@
 </template>
 
 <script setup>
-	import { computed } from "vue";
-	import { NButton, NIcon, NSelect } from "naive-ui";
+	import { NButton, NIcon } from "naive-ui";
 
-	const props = defineProps({
+	defineProps({
 		title: {
 			type: String,
 			default: "墨鱼AI助手",
@@ -130,22 +119,6 @@
 			type: Boolean,
 			default: false,
 		},
-		showModelSelector: {
-			type: Boolean,
-			default: true,
-		},
-		currentModel: {
-			type: String,
-			default: "deepseek-r1",
-		},
-		modelOptions: {
-			type: Array,
-			default: () => [
-				{ label: "DeepSeek R1", value: "deepseek-r1" },
-				{ label: "GPT-4", value: "gpt-4" },
-				{ label: "Claude 3", value: "claude-3" },
-			],
-		},
 	});
 
 	const emit = defineEmits([
@@ -153,13 +126,7 @@
 		"toggle-theme",
 		"go-settings",
 		"logout",
-		"update:currentModel",
 	]);
-
-	const selectedModel = computed({
-		get: () => props.currentModel,
-		set: (val) => emit("update:currentModel", val),
-	});
 </script>
 
 <style scoped>
@@ -170,7 +137,7 @@
 		padding: 16px 20px;
 		background: var(--n-color-card);
 		border-bottom: 1px solid var(--n-border-color);
-		box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+		box-shadow: 0 2px 8px var(--chat-shadow);
 	}
 
 	.header-left {

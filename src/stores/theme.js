@@ -1,7 +1,6 @@
 import { defineStore } from 'pinia';
-import { ref, computed } from 'vue';
-import { darkTheme } from 'naive-ui';
-import { useOsTheme } from 'naive-ui';
+import { ref, computed, watch } from 'vue';
+import { darkTheme, useOsTheme } from 'naive-ui';
 
 /**
  * 主题状态管理
@@ -12,19 +11,30 @@ export const useThemeStore = defineStore('theme', () => {
   // 状态
   const themeMode = ref(localStorage.getItem('themeMode') || 'light'); // 'light', 'dark', 'system'
 
-  // 计算属性
-  const currentTheme = computed(() => {
+  const resolveTheme = () => {
     if (themeMode.value === 'system') {
-      return osTheme.value === 'dark' ? darkTheme : null;
+      return osTheme.value === 'dark' ? 'dark' : 'light';
     }
-    return themeMode.value === 'dark' ? darkTheme : null;
+    return themeMode.value;
+  };
+
+  const syncDocumentTheme = () => {
+    if (typeof document === 'undefined') return;
+    const resolved = resolveTheme();
+    const root = document.documentElement;
+    const body = document.body;
+    root.setAttribute('data-theme', resolved);
+    body?.classList.toggle('dark-theme', resolved === 'dark');
+  };
+
+  watch([themeMode, osTheme], syncDocumentTheme, { immediate: true });
+
+  const currentTheme = computed(() => {
+    return resolveTheme() === 'dark' ? darkTheme : null;
   });
 
   const isDark = computed(() => {
-    if (themeMode.value === 'system') {
-      return osTheme.value === 'dark';
-    }
-    return themeMode.value === 'dark';
+    return resolveTheme() === 'dark';
   });
 
   // 操作
@@ -32,6 +42,7 @@ export const useThemeStore = defineStore('theme', () => {
     if (['light', 'dark', 'system'].includes(mode)) {
       themeMode.value = mode;
       localStorage.setItem('themeMode', mode);
+      syncDocumentTheme();
     }
   }
 
