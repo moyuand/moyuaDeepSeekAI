@@ -7,8 +7,8 @@
 			:model-options="modelOptions"
 			@update:current-model="selectedModel = $event"
 			@toggle-history="showHistorySidebar = !showHistorySidebar"
-			@toggle-theme="themeStore.toggleTheme()"
-			@go-settings="router.push('/settings')"
+			@toggle-theme="handleToggleTheme"
+			@go-settings="handleGoSettings"
 			@logout="handleLogout"
 		/>
 
@@ -326,8 +326,22 @@ const confirmDeleteHistory = (taskId) => {
 	});
 };
 
+// 主题切换
+const handleToggleTheme = () => {
+	console.log('主题切换按钮点击 - 当前isDark:', themeStore.isDark);
+	themeStore.toggleTheme();
+	console.log('主题切换后 - 新的isDark:', themeStore.isDark);
+};
+
+// 跳转设置页
+const handleGoSettings = () => {
+	console.log('设置按钮点击');
+	router.push('/settings');
+};
+
 // 退出登录
 const handleLogout = () => {
+	console.log('退出登录按钮点击');
 	userStore.logout();
 	router.push('/login');
 };

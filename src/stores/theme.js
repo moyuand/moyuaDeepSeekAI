@@ -36,10 +36,9 @@ export const useThemeStore = defineStore('theme', () => {
   }
 
   function toggleTheme() {
+    // 简化为只在light和dark之间切换
     if (themeMode.value === 'light') {
       setThemeMode('dark');
-    } else if (themeMode.value === 'dark') {
-      setThemeMode('system');
     } else {
       setThemeMode('light');
     }

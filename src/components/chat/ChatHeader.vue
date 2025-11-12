@@ -192,6 +192,15 @@
 		gap: 8px;
 	}
 
+	/* 确保按钮图标在任何主题下都可见 */
+	.header-right :deep(.n-button) {
+		color: var(--n-text-color);
+	}
+
+	.header-right :deep(.n-button svg) {
+		color: var(--n-text-color);
+	}
+
 	/* 响应式 */
 	@media (max-width: 768px) {
 		.chat-header {
