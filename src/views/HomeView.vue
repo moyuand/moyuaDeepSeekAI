@@ -25,6 +25,14 @@
 
 			<div class="chat-main">
 				<div ref="messagesContainer" class="messages-container">
+					<!-- 空状态 -->
+					<div v-if="conversationHistory.length === 0" class="empty-state">
+						<div class="empty-icon">💬</div>
+						<h2 class="empty-title">开始对话</h2>
+						<p class="empty-subtitle">向我提问任何问题，我会尽力帮助你</p>
+					</div>
+
+					<!-- 消息列表 -->
 					<div
 						v-for="(msg, index) in conversationHistory"
 						:key="index"
@@ -400,6 +408,44 @@ onUnmounted(() => {
 	flex: 1;
 	overflow-y: auto;
 	padding: 20px;
+}
+
+.empty-state {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	height: 100%;
+	text-align: center;
+	padding: 40px 20px;
+}
+
+.empty-icon {
+	font-size: 64px;
+	margin-bottom: 16px;
+	animation: float 3s ease-in-out infinite;
+}
+
+@keyframes float {
+	0%, 100% {
+		transform: translateY(0);
+	}
+	50% {
+		transform: translateY(-10px);
+	}
+}
+
+.empty-title {
+	font-size: 24px;
+	font-weight: 600;
+	color: var(--n-text-color);
+	margin: 0 0 8px 0;
+}
+
+.empty-subtitle {
+	font-size: 16px;
+	color: var(--n-text-color-disabled);
+	margin: 0;
 }
 
 .message-wrapper {
