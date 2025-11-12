@@ -97,28 +97,16 @@
 </template>
 
 <script setup>
-import { ref, inject, onMounted, watch } from "vue";
+import { ref, onMounted } from "vue";
 import { useRouter } from "vue-router";
 import { useMessage } from "naive-ui";
 import { post } from "@/utils/request";
+import { useUserStore } from "@/stores";
 
 const router = useRouter();
 const message = useMessage();
+const userStore = useUserStore();
 const loading = ref(false);
-
-// 注入登录状态
-const isLoggedIn = inject("isLoggedIn");
-const loginError = inject("loginError");
-const setLoginStatus = inject("setLoginStatus");
-
-// 显示登录错误消息
-watch(loginError, (newError) => {
-  if (newError) {
-    message.error(newError);
-    // 清除错误消息，避免重复显示
-    setLoginStatus(isLoggedIn.value, "");
-  }
-});
 
 const loginForm = ref({
   username: "",
@@ -142,20 +130,18 @@ const handleLogin = async () => {
       password: loginForm.value.password,
     });
 
-    // 登录成功，保存用户信息到本地存储
-    localStorage.setItem("userId", result.id);
-    localStorage.setItem("username", result.username);
-    localStorage.setItem("apiKey", result.api_key);
-
-    // 更新登录状态
-    setLoginStatus(true);
+    // 使用Pinia store保存用户信息
+    userStore.login({
+      id: result.id,
+      username: result.username,
+      api_key: result.api_key,
+    });
 
     message.success("登录成功");
     router.push("/chat");
   } catch (error) {
     console.error("登录失败:", error);
     message.error(error.message || "登录失败，请检查用户名和密码");
-    setLoginStatus(false, error.message || "登录失败，请检查用户名和密码");
   } finally {
     loading.value = false;
   }
@@ -176,20 +162,18 @@ const handleRegister = async () => {
       password: registerForm.value.password,
     });
 
-    // 注册成功，保存用户信息到本地存储
-    localStorage.setItem("userId", result.id);
-    localStorage.setItem("username", result.username);
-    localStorage.setItem("apiKey", result.api_key);
-
-    // 更新登录状态
-    setLoginStatus(true);
+    // 使用Pinia store保存用户信息
+    userStore.login({
+      id: result.id,
+      username: result.username,
+      api_key: result.api_key,
+    });
 
     message.success("注册成功");
     router.push("/chat");
   } catch (error) {
     console.error("注册失败:", error);
     message.error(error.message || "注册失败，请稍后再试");
-    setLoginStatus(false, error.message || "注册失败，请稍后再试");
   } finally {
     loading.value = false;
   }
@@ -201,7 +185,7 @@ const goToRegister = () => {
 
 // 当已登录时自动跳转到聊天页面
 onMounted(() => {
-  if (isLoggedIn.value) {
+  if (userStore.isLoggedIn) {
     router.push("/chat");
   }
 });
