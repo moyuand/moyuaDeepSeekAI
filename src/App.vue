@@ -104,25 +104,7 @@
 	// 页面加载时检查登录状态
 	onMounted(() => {
 		checkLoginStatus();
-
-		// 添加全局错误拦截，处理401/403响应
-		const originalFetch = window.fetch;
-		window.fetch = async function (...args) {
-			const response = await originalFetch(...args);
-
-			// 如果收到401或403响应，可能是授权失效
-			if (response.status === 401 || response.status === 403) {
-				// 避免在登录相关页面触发重定向
-				const currentRoute = router.currentRoute.value;
-				if (currentRoute.name !== "login") {
-					clearUserData();
-					loginError.value = "您的登录已过期，请重新登录";
-					router.push("/login");
-				}
-			}
-
-			return response;
-		};
+		// ✅ 已移除全局fetch拦截,401/403错误处理已在request.js的axios拦截器中实现
 	});
 </script>
 

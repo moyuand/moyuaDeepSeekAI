@@ -154,13 +154,6 @@
 								</template>
 							</n-button>
 
-							<n-select
-								v-model:value="selectedModel"
-								:options="options"
-								placeholder="请选择模型"
-								@update-value="handleUpdateModel"
-							/>
-
 							<n-dropdown
 								trigger="click"
 								:options="userMenuOptions"
@@ -384,19 +377,6 @@
 	let currentEvtSource = null;
 	let isNormalClosure = false;
 
-	const options = ref([
-		{
-			label: "DeepSeek R1",
-			value: "deepseek-r1",
-		},
-		{
-			label: "通义千问",
-			value: "qwen-omni-turbo",
-		},
-	]);
-
-	const selectedModel = ref("deepseek-r1");
-
 	const beforeUpload = async (data) => {
 		if (
 			data.file.file?.type !== "image/jpeg" &&
@@ -408,21 +388,6 @@
 			return false;
 		}
 		return true;
-	};
-
-	const handleUpdateModel = async (value) => {
-		console.log("选择了模型：", value);
-		try {
-			const result = await post("/updateModel", { model: value });
-			content.value = "";
-			conversationHistory.value = [];
-			currentTaskId.value = null;
-			console.log("更新模型结果：", result);
-			message.success(`已切换到${value}模型`);
-		} catch (error) {
-			message.error(error.message || "切换模型失败");
-			console.error("更新模型失败:", error);
-		}
 	};
 
 	// 处理文件移除事件
