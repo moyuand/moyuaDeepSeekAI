@@ -117,6 +117,16 @@ const isGenerating = ref(false);
 let currentEvtSource = null;
 let isNormalClosure = false;
 
+// 打字效果控制
+const loadTypingSpeed = () => {
+	const saved = localStorage.getItem('typingSpeed');
+	return saved !== null ? parseInt(saved) : 30;
+};
+const typingSpeed = ref(loadTypingSpeed()); // 从localStorage加载,默认30ms每字符
+let typingQueue = [];
+let typingTimer = null;
+let isTyping = false;
+
 // 历史记录
 const historyTasks = ref([]);
 const historyLoading = ref(false);
@@ -198,16 +208,53 @@ const decodeChunk = (chunk = '') => {
 	}
 };
 
+// 打字效果处理
+const processTypingQueue = () => {
+	if (isTyping || typingQueue.length === 0) return;
+
+	isTyping = true;
+	const processNext = () => {
+		if (typingQueue.length === 0) {
+			isTyping = false;
+			return;
+		}
+
+		const { type, text } = typingQueue.shift();
+		const msg = ensureAssistantMessage();
+
+		if (type === 'reasoning') {
+			msg.reasoning = (msg.reasoning || '') + text;
+		} else {
+			msg.content = (msg.content || '') + text;
+		}
+
+		scrollToBottom();
+
+		// 根据配置的速度继续处理下一个字符
+		if (typingQueue.length > 0) {
+			typingTimer = setTimeout(processNext, typingSpeed.value);
+		} else {
+			isTyping = false;
+		}
+	};
+
+	processNext();
+};
+
 const appendReasoning = (text = '') => {
-	const msg = ensureAssistantMessage();
-	msg.reasoning = (msg.reasoning || '') + text;
-	scrollToBottom();
+	// 将文本拆分为单个字符并加入队列
+	for (const char of text) {
+		typingQueue.push({ type: 'reasoning', text: char });
+	}
+	processTypingQueue();
 };
 
 const appendContent = (text = '') => {
-	const msg = ensureAssistantMessage();
-	msg.content = (msg.content || '') + text;
-	scrollToBottom();
+	// 将文本拆分为单个字符并加入队列
+	for (const char of text) {
+		typingQueue.push({ type: 'content', text: char });
+	}
+	processTypingQueue();
 };
 
 const doSSE = (taskId) => {
@@ -336,19 +383,57 @@ const doSSE = (taskId) => {
 	};
 };
 
+// 清理打字队列
+const clearTypingQueue = () => {
+	if (typingTimer) {
+		clearTimeout(typingTimer);
+		typingTimer = null;
+	}
+	typingQueue = [];
+	isTyping = false;
+};
+
 // 停止生成
-const stopGeneration = () => {
-	if (currentEvtSource) {
-		isNormalClosure = true;
+const stopGeneration = async () => {
+	if (!currentTaskId.value || !isGenerating.value) {
+		return;
+	}
+
+	try {
+		// 调用后端停止API
+		await post(`/stop/${currentTaskId.value}`);
+
+		// 关闭EventSource连接
+		if (currentEvtSource) {
+			isNormalClosure = true;
+			currentEvtSource.close();
+			currentEvtSource = null;
+		}
+
+		// 清空打字队列,立即显示剩余内容
+		clearTypingQueue();
+
+		// 更新UI状态
 		const lastMsg = conversationHistory.value[conversationHistory.value.length - 1];
 		if (lastMsg && lastMsg.role === 'assistant') {
 			lastMsg.content += '\n\n*[用户已停止生成]*';
 			lastMsg.isGenerating = false;
 		}
-		currentEvtSource.close();
-		currentEvtSource = null;
+
 		isGenerating.value = false;
 		message.info('已停止生成');
+	} catch (error) {
+		console.error('停止生成失败:', error);
+		message.error(error.message || '停止失败');
+
+		// 即使API调用失败,也尝试关闭本地连接
+		if (currentEvtSource) {
+			isNormalClosure = true;
+			currentEvtSource.close();
+			currentEvtSource = null;
+		}
+		clearTypingQueue();
+		isGenerating.value = false;
 	}
 };
 
@@ -458,6 +543,7 @@ onUnmounted(() => {
 	if (currentEvtSource) {
 		currentEvtSource.close();
 	}
+	clearTypingQueue();
 });
 </script>
 

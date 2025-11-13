@@ -144,6 +144,25 @@
 							style="width: 200px"
 						/>
 					</div>
+
+					<div class="mt-6">
+						<h3 class="section-title">打字速度</h3>
+						<div class="typing-speed-control">
+							<n-slider
+								v-model:value="typingSpeed"
+								:min="0"
+								:max="100"
+								:step="10"
+								:marks="typingSpeedMarks"
+								:tooltip="true"
+								:format-tooltip="formatSpeedTooltip"
+								style="flex: 1"
+							/>
+							<div class="speed-description">
+								{{ getSpeedDescription(typingSpeed) }}
+							</div>
+						</div>
+					</div>
 				</n-tab-pane>
 			</n-tabs>
 		</n-card>
@@ -220,6 +239,30 @@
 		{ label: "English", value: "en-US" },
 	];
 
+	// 打字速度设置 (0=即时显示, 100=最慢)
+	const typingSpeed = ref(30);
+	const typingSpeedMarks = {
+		0: "即时",
+		50: "中速",
+		100: "慢速",
+	};
+
+	const formatSpeedTooltip = (value) => {
+		if (value === 0) return "即时显示";
+		if (value <= 20) return "非常快";
+		if (value <= 40) return "快速";
+		if (value <= 60) return "中等";
+		if (value <= 80) return "较慢";
+		return "最慢";
+	};
+
+	const getSpeedDescription = (value) => {
+		if (value === 0) return "AI回复将立即全部显示";
+		if (value <= 30) return "快速打字效果,适合快速阅读";
+		if (value <= 60) return "标准打字效果,自然流畅";
+		return "慢速打字效果,便于逐字理解";
+	};
+
 	// 监听主题变化
 	const updateTheme = async (value) => {
 		try {
@@ -244,6 +287,22 @@
 		}
 	};
 
+	// 监听打字速度变化
+	const updateTypingSpeed = async (value) => {
+		try {
+			// 保存到localStorage供对话页面使用
+			localStorage.setItem("typingSpeed", value.toString());
+
+			// 保存到后端数据库
+			await post("/settings/typingSpeed", {
+				userId: userId.value,
+				value,
+			});
+		} catch (error) {
+			console.error("更新打字速度设置失败:", error);
+		}
+	};
+
 	// 主题变化时同步更新全局主题
 	watch(themeValue, (newValue) => {
 		// 更新全局主题
@@ -255,6 +314,9 @@
 
 	// 替换原来的watch监听
 	watch(language, updateLanguage);
+
+	// 监听打字速度变化
+	watch(typingSpeed, updateTypingSpeed);
 
 	// 返回上一页
 	const goBack = () => {
@@ -291,6 +353,14 @@
 				changeTheme(savedTheme);
 
 				language.value = settingsResult.settings.language || "zh-CN";
+
+				// 加载打字速度设置
+				const savedTypingSpeed =
+					settingsResult.settings.typingSpeed !== undefined
+						? parseInt(settingsResult.settings.typingSpeed)
+						: 30;
+				typingSpeed.value = savedTypingSpeed;
+				localStorage.setItem("typingSpeed", savedTypingSpeed.toString());
 			}
 		} catch (error) {
 			console.error("加载用户信息失败:", error);
@@ -433,6 +503,17 @@
 
 	.api-key-display {
 		flex: 1;
+	}
+
+	.typing-speed-control {
+		max-width: 500px;
+	}
+
+	.speed-description {
+		margin-top: 12px;
+		font-size: 14px;
+		color: var(--n-text-color-disabled);
+		font-style: italic;
 	}
 
 	@media (max-width: 640px) {
