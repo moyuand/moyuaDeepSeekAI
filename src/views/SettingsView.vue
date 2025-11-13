@@ -155,6 +155,7 @@
 	import { useRouter } from "vue-router";
 	import { useMessage, useDialog } from "naive-ui";
 	import { get, post, put } from "@/utils/request";
+	import { getErrorMessage } from "@/constants/errorCodes";
 
 	const router = useRouter();
 	const message = useMessage();
@@ -311,7 +312,10 @@
 			localStorage.setItem("username", profileForm.value.username);
 		} catch (error) {
 			console.error("更新个人资料失败:", error);
-			message.error(error.message || "更新失败，请稍后再试");
+			const errorMsg = error.code
+				? getErrorMessage(error.code, error.message)
+				: (error.message || "更新失败，请稍后再试");
+			message.error(errorMsg);
 		} finally {
 			loading.value = false;
 		}
@@ -340,7 +344,10 @@
 			}, 1500); // 延迟1.5秒，让用户看到成功消息
 		} catch (error) {
 			console.error("更新密码失败:", error);
-			message.error(error.message || "更新失败，请检查当前密码是否正确");
+			const errorMsg = error.code
+				? getErrorMessage(error.code, error.message)
+				: (error.message || "更新失败，请检查当前密码是否正确");
+			message.error(errorMsg);
 		} finally {
 			loading.value = false;
 		}
@@ -370,7 +377,10 @@
 			message.success("API密钥重置成功");
 		} catch (error) {
 			console.error("重置API密钥失败:", error);
-			message.error(error.message || "重置失败，请稍后再试");
+			const errorMsg = error.code
+				? getErrorMessage(error.code, error.message)
+				: (error.message || "重置失败，请稍后再试");
+			message.error(errorMsg);
 		} finally {
 			loading.value = false;
 		}

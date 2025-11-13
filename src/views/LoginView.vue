@@ -102,6 +102,7 @@ import { useRouter } from "vue-router";
 import { useMessage } from "naive-ui";
 import { post } from "@/utils/request";
 import { useUserStore } from "@/stores";
+import { ERROR_CODES, getErrorMessage } from "@/constants/errorCodes";
 
 const router = useRouter();
 const message = useMessage();
@@ -141,7 +142,14 @@ const handleLogin = async () => {
     router.push("/chat");
   } catch (error) {
     console.error("登录失败:", error);
-    message.error(error.message || "登录失败，请检查用户名和密码");
+
+    // 根据错误码显示友好提示
+    let errorMsg = error.message || "登录失败，请检查用户名和密码";
+    if (error.code) {
+      errorMsg = getErrorMessage(error.code, errorMsg);
+    }
+
+    message.error(errorMsg);
   } finally {
     loading.value = false;
   }
@@ -173,7 +181,14 @@ const handleRegister = async () => {
     router.push("/chat");
   } catch (error) {
     console.error("注册失败:", error);
-    message.error(error.message || "注册失败，请稍后再试");
+
+    // 根据错误码显示友好提示
+    let errorMsg = error.message || "注册失败，请稍后再试";
+    if (error.code) {
+      errorMsg = getErrorMessage(error.code, errorMsg);
+    }
+
+    message.error(errorMsg);
   } finally {
     loading.value = false;
   }

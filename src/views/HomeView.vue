@@ -3,7 +3,8 @@
 		<ChatHeader
 			:is-desktop="isDesktop"
 			:is-dark="themeStore.isDark"
-			@toggle-history="showHistorySidebar = !showHistorySidebar"
+			:show-sidebar="showHistorySidebar"
+			@toggle-history="handleToggleHistory"
 			@toggle-theme="handleToggleTheme"
 			@go-settings="handleGoSettings"
 			@logout="handleLogout"
@@ -411,6 +412,15 @@ const confirmDeleteHistory = (taskId) => {
 			}
 		},
 	});
+};
+
+// 切换历史记录
+const handleToggleHistory = () => {
+	if (isDesktop.value) {
+		showHistorySidebar.value = !showHistorySidebar.value;
+	} else {
+		showHistoryDrawer.value = !showHistoryDrawer.value;
+	}
 };
 
 // 主题切换

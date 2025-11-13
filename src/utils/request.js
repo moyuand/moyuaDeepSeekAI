@@ -1,4 +1,5 @@
 import axios from "axios";
+import { getErrorMessage, shouldReLogin } from "@/constants/errorCodes";
 
 // 创建axios实例
 const service = axios.create({
@@ -35,12 +36,36 @@ service.interceptors.request.use(
 // 响应拦截器
 service.interceptors.response.use(
   (response) => {
-    // 如果响应中包含错误信息，也需要提取出来
     const data = response.data;
 
-    // 检查响应结构中是否包含错误信息
+    // 新格式: { success, code, message, data }
+    if (data && typeof data.success === 'boolean') {
+      // 如果请求失败 (success === false)
+      if (!data.success) {
+        const errorMsg = data.message || getErrorMessage(data.code);
+        const errorObj = new Error(errorMsg);
+        errorObj.isApiError = true;
+        errorObj.code = data.code;
+        errorObj.apiData = data;
+        errorObj.status = response.status;
+
+        // 如果是需要重新登录的错误
+        if (shouldReLogin(data.code)) {
+          localStorage.removeItem("userId");
+          localStorage.removeItem("username");
+          localStorage.removeItem("apiKey");
+          window.location.href = "/login";
+        }
+
+        return Promise.reject(errorObj);
+      }
+
+      // 成功时返回 data 字段
+      return data.data || data;
+    }
+
+    // 兼容旧格式或其他响应格式
     if (data && data.error) {
-      // 创建自定义错误对象
       const errorObj = new Error(data.error);
       errorObj.isApiError = true;
       errorObj.apiData = data;
