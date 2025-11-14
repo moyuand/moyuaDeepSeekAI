@@ -102,7 +102,7 @@ import { useRouter } from "vue-router";
 import { useMessage } from "naive-ui";
 import { post } from "@/utils/request";
 import { useUserStore } from "@/stores";
-import { ERROR_CODES, getErrorMessage } from "@/constants/errorCodes";
+import { getErrorMessage } from "@/constants/errorCodes";
 
 const router = useRouter();
 const message = useMessage();

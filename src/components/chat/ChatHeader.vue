@@ -54,6 +54,25 @@
 				</template>
 			</n-button>
 
+			<!-- 新对话按钮 -->
+			<n-button quaternary circle @click="$emit('new-chat')">
+				<template #icon>
+					<n-icon size="22">
+						<svg
+							xmlns="http://www.w3.org/2000/svg"
+							width="24"
+							height="24"
+							viewBox="0 0 24 24"
+						>
+							<path
+								fill="currentColor"
+								d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"
+							/>
+						</svg>
+					</n-icon>
+				</template>
+			</n-button>
+
 			<!-- 主题切换 -->
 			<n-button quaternary circle @click="$emit('toggle-theme')">
 				<template #icon>
@@ -149,8 +168,9 @@
 		},
 	});
 
-	const emit = defineEmits([
+	defineEmits([
 		"toggle-history",
+		"new-chat",
 		"toggle-theme",
 		"go-settings",
 		"logout",

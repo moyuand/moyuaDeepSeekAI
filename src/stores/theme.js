@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia';
 import { ref, computed, watch } from 'vue';
 import { darkTheme, useOsTheme } from 'naive-ui';
+import logger from '@/utils/logger';
 
 /**
  * 主题状态管理
@@ -39,19 +40,33 @@ export const useThemeStore = defineStore('theme', () => {
 
   // 操作
   function setThemeMode(mode) {
-    if (['light', 'dark', 'system'].includes(mode)) {
-      themeMode.value = mode;
-      localStorage.setItem('themeMode', mode);
-      syncDocumentTheme();
+    try {
+      if (['light', 'dark', 'system'].includes(mode)) {
+        themeMode.value = mode;
+        localStorage.setItem('themeMode', mode);
+        syncDocumentTheme();
+        logger.debug('Theme mode changed', { mode });
+      } else {
+        logger.warn('Invalid theme mode', { mode });
+      }
+    } catch (error) {
+      logger.error('Failed to set theme mode', error);
+      throw error;
     }
   }
 
   function toggleTheme() {
-    // 简化为只在light和dark之间切换
-    if (themeMode.value === 'light') {
-      setThemeMode('dark');
-    } else {
-      setThemeMode('light');
+    try {
+      // 简化为只在light和dark之间切换
+      if (themeMode.value === 'light') {
+        setThemeMode('dark');
+      } else {
+        setThemeMode('light');
+      }
+      logger.debug('Theme toggled', { newMode: themeMode.value });
+    } catch (error) {
+      logger.error('Failed to toggle theme', error);
+      throw error;
     }
   }
 

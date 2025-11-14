@@ -57,7 +57,10 @@
 					</n-icon>
 					<div class="history-item-info">
 						<div class="history-title">{{ item.title || "未命名对话" }}</div>
-						<div class="history-time">{{ formatTime(item.timestamp) }}</div>
+						<div class="history-meta">
+							<span class="history-count" v-if="item.messageCount">{{ item.messageCount }} 条消息</span>
+							<span class="history-time">{{ formatTime(item.timestamp) }}</span>
+						</div>
 					</div>
 				</div>
 				<n-button
@@ -91,7 +94,7 @@
 <script setup>
 	import { NButton, NIcon, NSpin, NEmpty } from "naive-ui";
 
-	const props = defineProps({
+	defineProps({
 		historyList: {
 			type: Array,
 			required: true,
@@ -220,10 +223,28 @@
 		white-space: nowrap;
 	}
 
+	.history-meta {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		margin-top: 4px;
+		font-size: 12px;
+		color: var(--n-text-color-disabled);
+	}
+
+	.history-count {
+		display: inline-flex;
+		align-items: center;
+	}
+
+	.history-count::before {
+		content: '💬';
+		margin-right: 4px;
+	}
+
 	.history-time {
 		font-size: 12px;
 		color: var(--n-text-color-disabled);
-		margin-top: 2px;
 	}
 
 	.history-delete {

@@ -5,6 +5,7 @@
 			:is-dark="themeStore.isDark"
 			:show-sidebar="showHistorySidebar"
 			@toggle-history="handleToggleHistory"
+			@new-chat="handleNewChat"
 			@toggle-theme="handleToggleTheme"
 			@go-settings="handleGoSettings"
 			@logout="handleLogout"
@@ -22,7 +23,7 @@
 			/>
 
 			<div class="chat-main">
-				<div ref="messagesContainer" class="messages-container">
+				<div ref="messagesContainer" class="messages-container" @scroll="handleScroll">
 					<!-- 空状态 -->
 					<div v-if="conversationHistory.length === 0" class="empty-state">
 						<div class="empty-icon">💬</div>
@@ -70,7 +71,7 @@
 			</div>
 		</div>
 
-		<n-drawer v-model:show="showHistoryDrawer" placement="left" :width="280">
+		<n-drawer v-model:show="showHistoryDrawer" placement="left" width="85%">
 			<n-drawer-content title="聊天历史">
 				<HistorySidebar
 					:history-list="historyTasks"
@@ -86,10 +87,10 @@
 </template>
 
 <script setup>
-import { ref, computed, nextTick, onMounted, onUnmounted } from 'vue';
+import { ref, nextTick, onMounted, onUnmounted, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import { useMessage, useDialog, NCollapse, NCollapseItem, NDrawer, NDrawerContent } from 'naive-ui';
-import { useUserStore, useChatStore, useThemeStore } from '@/stores';
+import { useUserStore, useThemeStore, useChatStore } from '@/stores';
 import { ChatHeader, ChatInput, HistorySidebar } from '@/components/chat';
 import { safeMarkdown } from '@/utils/markdown';
 import { get, post, del } from '@/utils/request';
@@ -98,14 +99,15 @@ const router = useRouter();
 const message = useMessage();
 const dialog = useDialog();
 const userStore = useUserStore();
-const chatStore = useChatStore();
 const themeStore = useThemeStore();
+const chatStore = useChatStore();
 
 // UI状态
 const isDesktop = ref(window.innerWidth >= 768);
 const showHistorySidebar = ref(true);
 const showHistoryDrawer = ref(false);
 const messagesContainer = ref(null);
+const isUserScrolling = ref(false); // 标记用户是否主动滚动
 
 // 对话状态
 const content = ref('');
@@ -135,18 +137,44 @@ const formatHistoryTasks = (data) => {
 	const tasksArray = Array.isArray(data) ? data : data?.tasks || [];
 	return tasksArray.map(task => ({
 		id: task.taskId || task.id,
-		title: task.firstMessage || task.title || '未命名对话',
-		timestamp: task.startTime || task.lastActivity || task.updatedAt,
+		title: task.title || task.firstMessage || '未命名对话',
+		messageCount: task.messageCount || 0,
+		timestamp: task.lastActivity || task.startTime || task.updatedAt,
 	}));
 };
 
+// 检查是否在底部（允许一定误差）
+const isAtBottom = () => {
+	if (!messagesContainer.value) return true;
+	const { scrollTop, scrollHeight, clientHeight } = messagesContainer.value;
+	const threshold = 100; // 距离底部100px内视为在底部
+	return scrollHeight - scrollTop - clientHeight < threshold;
+};
+
 // 滚动到底部
-const scrollToBottom = () => {
+const scrollToBottom = (force = false) => {
 	nextTick(() => {
 		if (messagesContainer.value) {
-			messagesContainer.value.scrollTop = messagesContainer.value.scrollHeight;
+			// 如果是强制滚动，或者用户没有主动滚动且已经在底部附近，才自动滚动
+			if (force || (!isUserScrolling.value && isAtBottom())) {
+				messagesContainer.value.scrollTop = messagesContainer.value.scrollHeight;
+			}
 		}
 	});
+};
+
+// 监听用户滚动行为
+const handleScroll = () => {
+	if (!messagesContainer.value) return;
+
+	// 检查用户是否在底部
+	if (isAtBottom()) {
+		// 如果滚动到底部，允许自动滚动
+		isUserScrolling.value = false;
+	} else {
+		// 如果不在底部，说明用户主动向上滚动了
+		isUserScrolling.value = true;
+	}
 };
 
 // 发送消息
@@ -158,7 +186,9 @@ const sendMessage = async () => {
 		content: content.value,
 	});
 
-	scrollToBottom();
+	// 用户发送消息时，强制滚动到底部并重置滚动状态
+	isUserScrolling.value = false;
+	scrollToBottom(true);
 
 	try {
 		let taskId;
@@ -472,7 +502,9 @@ const loadHistoryConversation = async (taskId) => {
 		conversationHistory.value = result.messages || [];
 		currentTaskId.value = taskId;
 		showHistoryDrawer.value = false;
-		scrollToBottom();
+		// 加载历史对话时强制滚动到底部
+		isUserScrolling.value = false;
+		scrollToBottom(true);
 	} catch (error) {
 		console.error('加载对话失败:', error);
 		message.error('加载失败');
@@ -508,6 +540,27 @@ const handleToggleHistory = () => {
 	}
 };
 
+// 开始新对话
+const handleNewChat = () => {
+	if (conversationHistory.value.length > 0) {
+		dialog.warning({
+			title: '开始新对话',
+			content: '当前对话尚未保存到历史记录，是否继续？',
+			positiveText: '继续',
+			negativeText: '取消',
+			onPositiveClick: () => {
+				conversationHistory.value = [];
+				currentTaskId.value = null;
+				chatStore.startNewChat();
+				message.success('已开始新对话');
+			},
+		});
+	} else {
+		chatStore.startNewChat();
+		message.success('已开始新对话');
+	}
+};
+
 // 主题切换
 const handleToggleTheme = () => {
 	console.log('主题切换按钮点击 - 当前isDark:', themeStore.isDark);
@@ -524,6 +577,15 @@ const handleGoSettings = () => {
 // 退出登录
 const handleLogout = () => {
 	console.log('退出登录按钮点击');
+
+	// 清空当前对话记录
+	conversationHistory.value = [];
+	currentTaskId.value = null;
+
+	// 清空聊天 store
+	chatStore.startNewChat();
+
+	// 执行登出
 	userStore.logout();
 	router.push('/login');
 };
@@ -536,7 +598,32 @@ const handleResize = () => {
 onMounted(() => {
 	window.addEventListener('resize', handleResize);
 	loadHistory();
+
+	// 恢复上次的会话
+	const restored = chatStore.restoreSession();
+	if (restored) {
+		// 从 chatStore 恢复消息到 conversationHistory
+		conversationHistory.value = chatStore.messages;
+		currentTaskId.value = chatStore.currentSessionId;
+		isUserScrolling.value = false;
+		scrollToBottom(true);
+	}
 });
+
+// 监听消息变化，自动保存到 localStorage
+watch(
+	() => conversationHistory.value,
+	() => {
+		if (conversationHistory.value.length > 0) {
+			// 同步到 chatStore
+			chatStore.messages = conversationHistory.value;
+			chatStore.currentSessionId = currentTaskId.value;
+			// 保存到 localStorage
+			chatStore.saveCurrentSession();
+		}
+	},
+	{ deep: true }
+);
 
 onUnmounted(() => {
 	window.removeEventListener('resize', handleResize);
@@ -640,6 +727,16 @@ onUnmounted(() => {
 	padding: 12px 16px;
 	border-radius: 18px 18px 4px 18px;
 	box-shadow: 0 2px 8px rgba(102, 126, 234, 0.3);
+	overflow-wrap: break-word;
+	word-wrap: break-word;
+	word-break: break-word;
+}
+
+.user-message .message-content :deep(pre),
+.user-message .message-content :deep(code),
+.user-message .message-content :deep(table) {
+	overflow-x: auto;
+	max-width: 100%;
 }
 
 .assistant-message {
@@ -666,10 +763,94 @@ onUnmounted(() => {
 	background: rgba(102, 126, 234, 0.05);
 	border-radius: 8px;
 	font-size: 14px;
+	overflow-wrap: break-word;
+	word-wrap: break-word;
+	word-break: break-word;
+}
+
+.reasoning-content :deep(pre),
+.reasoning-content :deep(code),
+.reasoning-content :deep(table) {
+	overflow-x: auto;
+	max-width: 100%;
 }
 
 .answer-content {
 	line-height: 1.6;
+	overflow-wrap: break-word;
+	word-wrap: break-word;
+	word-break: break-word;
+}
+
+/* Markdown 内容样式 - 处理表格和代码块溢出 */
+.message-content :deep(pre) {
+	overflow-x: auto;
+	max-width: 100%;
+	background: rgba(0, 0, 0, 0.05);
+	padding: 12px;
+	border-radius: 8px;
+	margin: 8px 0;
+}
+
+.dark-theme .message-content :deep(pre) {
+	background: rgba(255, 255, 255, 0.05);
+}
+
+.message-content :deep(code) {
+	overflow-wrap: break-word;
+	word-break: break-word;
+}
+
+.message-content :deep(pre code) {
+	overflow-wrap: normal;
+	word-break: normal;
+	white-space: pre;
+	display: block;
+}
+
+.message-content :deep(table) {
+	display: block;
+	overflow-x: auto;
+	max-width: 100%;
+	border-collapse: collapse;
+	margin: 12px 0;
+	border: 1px solid var(--n-border-color);
+}
+
+.message-content :deep(th),
+.message-content :deep(td) {
+	border: 1px solid var(--n-border-color);
+	padding: 8px 12px;
+	text-align: left;
+	white-space: nowrap;
+}
+
+.message-content :deep(th) {
+	background: var(--n-color-hover);
+	font-weight: 600;
+}
+
+.message-content :deep(tr:nth-child(even)) {
+	background: rgba(0, 0, 0, 0.02);
+}
+
+.dark-theme .message-content :deep(tr:nth-child(even)) {
+	background: rgba(255, 255, 255, 0.02);
+}
+
+.message-content :deep(img) {
+	max-width: 100%;
+	height: auto;
+	border-radius: 8px;
+	margin: 8px 0;
+}
+
+.message-content :deep(blockquote) {
+	border-left: 3px solid var(--n-border-color);
+	padding-left: 12px;
+	margin: 12px 0;
+	color: var(--n-text-color-disabled);
+	font-style: italic;
 }
 
 .typing-indicator {

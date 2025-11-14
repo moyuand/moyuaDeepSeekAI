@@ -1,5 +1,7 @@
 import axios from "axios";
 import { getErrorMessage, shouldReLogin } from "@/constants/errorCodes";
+import logger from "./logger";
+import errorHandler from "./errorHandler";
 
 // 创建axios实例
 const service = axios.create({
@@ -12,9 +14,28 @@ const service = axios.create({
   },
 });
 
+// 生成请求ID用于追踪
+let requestId = 0;
+function generateRequestId() {
+  return `req_${Date.now()}_${++requestId}`;
+}
+
 // 请求拦截器
 service.interceptors.request.use(
   (config) => {
+    // 生成请求ID
+    const reqId = generateRequestId();
+    config.headers['X-Request-ID'] = reqId;
+
+    // 记录请求日志
+    logger.debug('API Request', {
+      requestId: reqId,
+      method: config.method?.toUpperCase(),
+      url: config.url,
+      params: config.params,
+      data: config.data
+    });
+
     // 在这里可以添加请求头等配置
     const apiKey = localStorage.getItem("apiKey");
 
@@ -29,6 +50,7 @@ service.interceptors.request.use(
     return config;
   },
   (error) => {
+    logger.error('Request interceptor error', error);
     return Promise.reject(error);
   }
 );
@@ -37,6 +59,14 @@ service.interceptors.request.use(
 service.interceptors.response.use(
   (response) => {
     const data = response.data;
+    const requestId = response.config.headers['X-Request-ID'];
+
+    // 记录成功响应
+    logger.debug('API Response', {
+      requestId,
+      status: response.status,
+      url: response.config.url
+    });
 
     // 新格式: { success, code, message, data }
     if (data && typeof data.success === 'boolean') {
@@ -48,6 +78,14 @@ service.interceptors.response.use(
         errorObj.code = data.code;
         errorObj.apiData = data;
         errorObj.status = response.status;
+
+        // 记录API错误
+        logger.warn('API Error', {
+          requestId,
+          code: data.code,
+          message: errorMsg,
+          url: response.config.url
+        });
 
         // 如果是需要重新登录的错误
         if (shouldReLogin(data.code)) {
@@ -70,78 +108,46 @@ service.interceptors.response.use(
       errorObj.isApiError = true;
       errorObj.apiData = data;
       errorObj.status = response.status;
+
+      logger.warn('API Error (legacy format)', {
+        requestId,
+        error: data.error,
+        url: response.config.url
+      });
+
       return Promise.reject(errorObj);
     }
 
     return data;
   },
   (error) => {
-    // 格式化错误信息
-    let errorMsg = "服务器请求失败";
-    let errorData = {};
+    const requestId = error.config?.headers?.['X-Request-ID'];
 
-    if (error.response) {
-      // 服务器返回了错误状态码
-      const { status, data } = error.response;
-      errorMsg = data.error || data.message || `请求错误 (${status})`;
-      errorData = data;
+    // 使用errorHandler统一处理错误
+    const standardError = errorHandler.handle(error, {
+      requestId,
+      url: error.config?.url,
+      method: error.config?.method
+    });
 
-      // 根据状态码定制错误信息
-      switch (status) {
-        case 400:
-          errorMsg = data.error || "请求参数错误";
-          break;
-        case 401:
-          errorMsg = "认证失败，请重新登录";
-          // 清除用户信息并跳转到登录页
-          localStorage.removeItem("userId");
-          localStorage.removeItem("username");
-          localStorage.removeItem("apiKey");
+    // 记录详细错误信息
+    logger.error('API Request Failed', {
+      requestId,
+      url: error.config?.url,
+      method: error.config?.method,
+      errorType: standardError.type,
+      errorCode: standardError.code,
+      errorMessage: standardError.message,
+      status: standardError.status
+    });
 
-          // 使用window.location跳转到登录页，确保整个应用重新加载
-          window.location.href = "/login";
-          break;
-        case 403:
-          errorMsg = "您没有权限访问该资源";
-          // 权限错误也需要重新登录
-          localStorage.removeItem("userId");
-          localStorage.removeItem("username");
-          localStorage.removeItem("apiKey");
-
-          window.location.href = "/login";
-          break;
-        case 404:
-          errorMsg = "请求的资源不存在";
-          break;
-        case 500:
-          errorMsg = "服务器内部错误";
-          break;
-        case 413:
-          errorMsg = "上传图片超过了 20MB";
-          break;
-        default:
-          errorMsg = data.error || `请求失败 (${status})`;
-      }
-    } else if (error.request) {
-      // 请求发送了但没有收到响应
-      errorMsg = "服务器无响应";
-    } else if (error.message) {
-      // 请求设置时发生错误
-      if (error.message.includes("timeout")) {
-        errorMsg = "请求超时，请稍后重试";
-      } else {
-        errorMsg = error.message;
-      }
-    }
-
-    // 增强错误对象
-    const enhancedError = new Error(errorMsg);
+    // 创建增强的错误对象，保持向后兼容
+    const enhancedError = new Error(standardError.message);
     enhancedError.isApiError = true;
     enhancedError.originalError = error;
-    enhancedError.errorData = errorData;
-
-    // 日志记录错误
-    console.error("API请求错误:", errorMsg, error);
+    enhancedError.standardError = standardError;
+    enhancedError.code = standardError.code;
+    enhancedError.status = standardError.status;
 
     return Promise.reject(enhancedError);
   }

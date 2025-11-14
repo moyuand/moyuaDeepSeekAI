@@ -446,17 +446,51 @@ interface UserSettings {
  * 主题模式
  */
 type ThemeMode = 'light' | 'dark' | 'system';
+```
+
+### 3.6 对话持久化模型 🆕
+
+```typescript
+/**
+ * 当前会话持久化数据
+ * 存储在 localStorage，用于页面刷新后恢复对话
+ */
+interface PersistedSession {
+  sessionId: string | null;           // 当前会话ID
+  messages: Message[];                // 消息列表
+  timestamp: number;                  // 保存时间戳（Unix时间戳）
+}
 
 /**
- * 更新设置请求
+ * localStorage 键名常量
  */
-interface UpdateSettingsRequest {
-  userId: string;
-  value: any;                    // 设置值
+const STORAGE_KEYS = {
+  CURRENT_SESSION: 'currentSession',  // 当前会话数据
+  SESSION_EXPIRY: 24 * 60 * 60 * 1000 // 24小时过期时间
+} as const;
+
+/**
+ * 会话恢复结果
+ */
+interface SessionRestoreResult {
+  success: boolean;                   // 是否成功恢复
+  session?: PersistedSession;         // 恢复的会话数据
+  reason?: string;                    // 失败原因
 }
 ```
 
-### 3.6 错误模型
+**数据持久化策略**:
+- **存储位置**: `localStorage['currentSession']`
+- **存储时机**:
+  - 消息列表变化时（watch监听）
+  - 发送新消息后
+  - 接收AI响应后
+- **有效期**: 24小时（超时自动清除）
+- **大小限制**: localStorage 5MB 上限，建议单个会话消息数 < 100条
+
+---
+
+### 3.7 错误模型
 
 ```typescript
 /**
@@ -1005,6 +1039,71 @@ export const useChatStore = defineStore('chat', () => {
     isGenerating.value = value;
   }
 
+  // 🆕 对话持久化方法
+  /**
+   * 保存当前会话到 localStorage
+   */
+  function saveCurrentSession() {
+    const session = {
+      sessionId: currentTaskId.value,
+      messages: conversationHistory.value,
+      timestamp: Date.now()
+    };
+    localStorage.setItem('currentSession', JSON.stringify(session));
+    logger.debug('Current session saved', { sessionId: session.sessionId });
+  }
+
+  /**
+   * 从 localStorage 恢复会话
+   * @returns {boolean} 是否成功恢复
+   */
+  function restoreSession() {
+    const saved = localStorage.getItem('currentSession');
+    if (!saved) return false;
+
+    try {
+      const session = JSON.parse(saved);
+      const age = Date.now() - session.timestamp;
+
+      // 检查是否在24小时内
+      if (age < 24 * 60 * 60 * 1000) {
+        currentTaskId.value = session.sessionId;
+        conversationHistory.value = session.messages;
+        logger.info('Session restored', {
+          sessionId: session.sessionId,
+          messageCount: session.messages.length
+        });
+        return true;
+      } else {
+        // 数据过期，清除
+        localStorage.removeItem('currentSession');
+        logger.info('Session expired and cleared');
+        return false;
+      }
+    } catch (error) {
+      logger.error('Failed to restore session', error);
+      localStorage.removeItem('currentSession');
+      return false;
+    }
+  }
+
+  /**
+   * 清除持久化的会话数据
+   */
+  function clearPersistedSession() {
+    localStorage.removeItem('currentSession');
+    logger.debug('Persisted session cleared');
+  }
+
+  /**
+   * 开始新对话（清空当前对话并清除持久化）
+   */
+  function startNewChat() {
+    clearConversation();
+    clearPersistedSession();
+    logger.info('New chat started');
+  }
+
   return {
     // State
     currentTaskId,
@@ -1021,7 +1120,13 @@ export const useChatStore = defineStore('chat', () => {
     updateLastMessage,
     clearConversation,
     loadConversation,
-    setGenerating
+    setGenerating,
+
+    // 🆕 持久化 Actions
+    saveCurrentSession,
+    restoreSession,
+    clearPersistedSession,
+    startNewChat
   };
 });
 
@@ -1029,6 +1134,51 @@ function generateMessageId() {
   return `msg_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 }
 ```
+
+**使用示例**:
+
+```javascript
+// 在 HomeView.vue 中使用
+
+import { useChatStore } from '@/stores/chat';
+import { onMounted, watch } from 'vue';
+
+const chatStore = useChatStore();
+
+// 页面加载时恢复会话
+onMounted(() => {
+  chatStore.restoreSession();
+});
+
+// 监听消息变化，自动保存
+watch(
+  () => chatStore.conversationHistory,
+  () => {
+    if (chatStore.conversationHistory.length > 0) {
+      chatStore.saveCurrentSession();
+    }
+  },
+  { deep: true }
+);
+
+// 新对话按钮点击
+const handleNewChat = () => {
+  if (chatStore.messageCount > 0) {
+    dialog.warning({
+      title: '开始新对话',
+      content: '当前对话尚未保存到历史记录，是否继续？',
+      positiveText: '继续',
+      negativeText: '取消',
+      onPositiveClick: () => {
+        chatStore.startNewChat();
+      }
+    });
+  } else {
+    chatStore.startNewChat();
+  }
+};
+```
+
 
 ### 5.4 Store 持久化
 
@@ -1678,6 +1828,159 @@ describe('User Store', () => {
     expect(store.userId).toBeNull();
     expect(store.isLoggedIn).toBe(false);
     expect(localStorage.getItem('userId')).toBeNull();
+  });
+});
+```
+
+**Chat Store 持久化测试** 🆕:
+```javascript
+// tests/unit/stores/chat.spec.js
+
+import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { setActivePinia, createPinia } from 'pinia';
+import { useChatStore } from '@/stores/chat';
+
+describe('Chat Store - Session Persistence', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia());
+    localStorage.clear();
+    vi.clearAllMocks();
+  });
+
+  describe('saveCurrentSession', () => {
+    it('应该保存当前会话到 localStorage', () => {
+      const store = useChatStore();
+
+      store.currentTaskId = 'task-123';
+      store.conversationHistory = [
+        { role: 'user', content: 'Hello' },
+        { role: 'assistant', content: 'Hi there!' }
+      ];
+
+      store.saveCurrentSession();
+
+      const saved = localStorage.getItem('currentSession');
+      expect(saved).toBeDefined();
+
+      const session = JSON.parse(saved);
+      expect(session.sessionId).toBe('task-123');
+      expect(session.messages).toHaveLength(2);
+      expect(session.timestamp).toBeDefined();
+    });
+
+    it('空会话也应该能保存', () => {
+      const store = useChatStore();
+
+      store.currentTaskId = null;
+      store.conversationHistory = [];
+
+      store.saveCurrentSession();
+
+      const saved = localStorage.getItem('currentSession');
+      expect(saved).toBeDefined();
+
+      const session = JSON.parse(saved);
+      expect(session.sessionId).toBeNull();
+      expect(session.messages).toHaveLength(0);
+    });
+  });
+
+  describe('restoreSession', () => {
+    it('应该从 localStorage 恢复会话', () => {
+      const store = useChatStore();
+
+      // 模拟保存的会话数据
+      const mockSession = {
+        sessionId: 'task-456',
+        messages: [
+          { role: 'user', content: 'Test message' },
+          { role: 'assistant', content: 'Test reply' }
+        ],
+        timestamp: Date.now() - 1000 // 1秒前
+      };
+      localStorage.setItem('currentSession', JSON.stringify(mockSession));
+
+      const result = store.restoreSession();
+
+      expect(result).toBe(true);
+      expect(store.currentTaskId).toBe('task-456');
+      expect(store.conversationHistory).toHaveLength(2);
+      expect(store.conversationHistory[0].content).toBe('Test message');
+    });
+
+    it('会话过期应该清除数据', () => {
+      const store = useChatStore();
+
+      // 模拟过期的会话数据（25小时前）
+      const mockSession = {
+        sessionId: 'task-old',
+        messages: [{ role: 'user', content: 'Old message' }],
+        timestamp: Date.now() - 25 * 60 * 60 * 1000
+      };
+      localStorage.setItem('currentSession', JSON.stringify(mockSession));
+
+      const result = store.restoreSession();
+
+      expect(result).toBe(false);
+      expect(store.currentTaskId).toBeNull();
+      expect(store.conversationHistory).toHaveLength(0);
+      expect(localStorage.getItem('currentSession')).toBeNull();
+    });
+
+    it('无数据时应该返回 false', () => {
+      const store = useChatStore();
+
+      const result = store.restoreSession();
+
+      expect(result).toBe(false);
+      expect(store.currentTaskId).toBeNull();
+    });
+
+    it('数据格式错误应该清除并返回 false', () => {
+      const store = useChatStore();
+
+      localStorage.setItem('currentSession', 'invalid json');
+
+      const result = store.restoreSession();
+
+      expect(result).toBe(false);
+      expect(localStorage.getItem('currentSession')).toBeNull();
+    });
+  });
+
+  describe('clearPersistedSession', () => {
+    it('应该清除 localStorage 中的会话数据', () => {
+      const store = useChatStore();
+
+      localStorage.setItem('currentSession', JSON.stringify({
+        sessionId: 'task-789',
+        messages: [],
+        timestamp: Date.now()
+      }));
+
+      store.clearPersistedSession();
+
+      expect(localStorage.getItem('currentSession')).toBeNull();
+    });
+  });
+
+  describe('startNewChat', () => {
+    it('应该清空对话并清除持久化数据', () => {
+      const store = useChatStore();
+
+      // 设置初始状态
+      store.currentTaskId = 'task-999';
+      store.conversationHistory = [
+        { role: 'user', content: 'Message 1' }
+      ];
+      localStorage.setItem('currentSession', 'some data');
+
+      store.startNewChat();
+
+      expect(store.currentTaskId).toBeNull();
+      expect(store.conversationHistory).toHaveLength(0);
+      expect(localStorage.getItem('currentSession')).toBeNull();
+    });
   });
 });
 ```
@@ -3101,6 +3404,15 @@ jobs:
 - [ ] 实现历史记录模块（列表、详情、删除）
 - [ ] 实现设置模块（用户资料、安全、外观）
 - [ ] 响应式设计（移动端 + 桌面端）
+- [ ] 🆕 实现对话持久化功能
+  - [ ] Chat Store 添加持久化方法（saveCurrentSession、restoreSession、clearPersistedSession、startNewChat）
+  - [ ] 在 HomeView 中集成会话恢复（onMounted 时调用 restoreSession）
+  - [ ] 添加消息变化监听（watch），自动保存到 localStorage
+  - [ ] 在 ChatHeader 中添加"新对话"按钮（编辑图标，快捷键 Ctrl/Cmd+N）
+  - [ ] 实现新对话确认对话框（有未保存消息时）
+  - [ ] 添加全局快捷键监听（Ctrl/Cmd+N）
+  - [ ] 测试刷新恢复功能
+  - [ ] 测试会话过期清理（24小时）
 - [ ] 编写集成测试（API + 组件）
 
 ### 12.3 第三阶段：优化与测试（2周）
