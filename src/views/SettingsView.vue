@@ -170,16 +170,18 @@
 </template>
 
 <script setup>
-	import { ref, onMounted, watch, inject } from "vue";
+	import { ref, onMounted, watch } from "vue";
 	import { useRouter } from "vue-router";
 	import { useMessage, useDialog } from "naive-ui";
 	import { get, post, put } from "@/utils/request";
 	import { getErrorMessage } from "@/constants/errorCodes";
+	import { useThemeStore } from "@/stores";
 
 	const router = useRouter();
 	const message = useMessage();
 	const dialog = useDialog();
 	const loading = ref(false);
+	const themeStore = useThemeStore();
 
 	// 个人资料表单
 	const profileForm = ref({
@@ -226,11 +228,8 @@
 	const apiKey = ref("");
 	const userId = ref("");
 
-	// 主题设置 - 使用inject获取全局主题状态
-	const changeTheme = inject("changeTheme");
-
 	// 更新主题变量，绑定到全局状态
-	const themeValue = ref(localStorage.getItem("themeMode") || "light");
+	const themeValue = ref(themeStore.themeMode || "light");
 
 	// 主题设置
 	const language = ref("zh-CN");
@@ -306,7 +305,7 @@
 	// 主题变化时同步更新全局主题
 	watch(themeValue, (newValue) => {
 		// 更新全局主题
-		changeTheme(newValue);
+		themeStore.setThemeMode(newValue);
 
 		// 保存到用户设置
 		updateTheme(newValue);
@@ -344,23 +343,43 @@
 			apiKey.value = localStorage.getItem("apiKey") || "";
 
 			// 获取用户设置
-			const settingsResult = await get(`/settings?userId=${userId.value}`);
-			if (settingsResult.settings) {
-				// 更新主题值并同步到全局
-				const savedTheme = settingsResult.settings.theme || "light";
-				themeValue.value = savedTheme;
-				// 同步到全局主题
-				changeTheme(savedTheme);
+			try {
+				const settingsResult = await get(`/settings?userId=${userId.value}`);
+				if (settingsResult && settingsResult.settings) {
+					// 更新主题值并同步到全局
+					const savedTheme = settingsResult.settings.theme || "light";
+					themeValue.value = savedTheme;
+					// 同步到全局主题
+					themeStore.setThemeMode(savedTheme);
 
-				language.value = settingsResult.settings.language || "zh-CN";
+					language.value = settingsResult.settings.language || "zh-CN";
 
-				// 加载打字速度设置
-				const savedTypingSpeed =
-					settingsResult.settings.typingSpeed !== undefined
-						? parseInt(settingsResult.settings.typingSpeed)
-						: 30;
-				typingSpeed.value = savedTypingSpeed;
-				localStorage.setItem("typingSpeed", savedTypingSpeed.toString());
+					// 加载打字速度设置
+					const savedTypingSpeed =
+						settingsResult.settings.typingSpeed !== undefined
+							? parseInt(settingsResult.settings.typingSpeed)
+							: 30;
+					typingSpeed.value = savedTypingSpeed;
+					localStorage.setItem("typingSpeed", savedTypingSpeed.toString());
+				} else {
+					// 如果没有设置数据，使用默认值
+					console.log("未找到用户设置，使用默认值");
+					const defaultTheme = themeStore.themeMode || "light";
+					themeValue.value = defaultTheme;
+					themeStore.setThemeMode(defaultTheme);
+					language.value = "zh-CN";
+					typingSpeed.value = 30;
+					localStorage.setItem("typingSpeed", "30");
+				}
+			} catch (settingsError) {
+				// 如果获取设置失败，使用默认值，不影响主流程
+				console.warn("获取用户设置失败，使用默认值:", settingsError);
+				const defaultTheme = themeStore.themeMode || "light";
+				themeValue.value = defaultTheme;
+				themeStore.setThemeMode(defaultTheme);
+				language.value = "zh-CN";
+				typingSpeed.value = 30;
+				localStorage.setItem("typingSpeed", "30");
 			}
 		} catch (error) {
 			console.error("加载用户信息失败:", error);
